@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>寝室留言板</title>
+  <title>留言板-note简易版</title>
   <style>
     * { box-sizing: border-box; }
     html, body {
@@ -293,7 +293,7 @@
       root.innerHTML =
         '<div class="container">' +
           '<h1>寝室留言板</h1>' +
-          '<p class="hint">你是 <span class="msg-hash">#' + escapeHtml(self.hash) + '</span>，别人靠这串识别你。最新在顶。Ctrl/⌘+Enter 发送。</p>' +
+          '<p class="hint">你是 <span class="msg-hash">#' + escapeHtml(self.hash) + '</span>，别人靠这串识别你。最新在顶</p>' +
           '<div class="composer">' +
             '<textarea id="msg-input" placeholder="留点什么…" maxlength="2000"></textarea>' +
             '<button id="msg-btn">发</button>' +

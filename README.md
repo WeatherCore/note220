@@ -1,4 +1,4 @@
-# 寝室留言板 (note-num)
+# 寝室留言板 (note220)
 
 寝室自用版 note.ms 替代品。部署在 Cloudflare Pages + KV，匿名接力留言板，无登录系统，门口令牌放行。
 
@@ -16,7 +16,7 @@
 ## 项目结构
 
 ```
-note-num/
+note220/
 ├── public/
 │   └── index.html        # 前端单页（含令牌输入页 + 留言板 UI + 全部 JS）
 ├── functions/
@@ -29,13 +29,26 @@ note-num/
 └── README.md
 ```
 
-## 一次性配置（Cloudflare 后台，约 5 分钟）
+---
 
-### 1. 安装 wrangler（本地 CLI）
+## 部署到 Cloudflare（fork → 上线，约 10 分钟）
+
+下面这条流程是把项目从 fork 到能用跑通过的最短路径，**每一步都标了坑**，照着走就行。
+
+### 0. Fork & Clone
+
+在 GitHub 上 fork 这个仓库到自己账号，然后 clone 到本地：
 
 ```bash
-npm install -g wrangler   # 或 npx wrangler
-wrangler login            # 浏览器登录 Cloudflare 账号
+git clone https://github.com/<你的用户名>/note220.git
+cd note220
+```
+
+### 1. 安装 wrangler 并登录
+
+```bash
+npm install -g wrangler
+wrangler login      # 浏览器弹出 Cloudflare 登录页，登你的账号
 ```
 
 ### 2. 创建 KV 命名空间
@@ -44,72 +57,127 @@ wrangler login            # 浏览器登录 Cloudflare 账号
 wrangler kv namespace create MESSAGES
 ```
 
-输出形如 `id = "abcd1234..."`。把这个 id 填进 `wrangler.toml` 的 `[[kv_namespaces]] id = "..."`。
+输出形如 `id = "2a483d7164fa4dcc899adf1348cf9930"`。**把这个 id 复制下来**，下一步要用。
 
-### 3. 创建 Pages 项目
+### 3. 改 wrangler.toml（两处）
 
-去 Cloudflare 控制台 → Workers & Pages → Create → Pages → Connect to Git → 选这个 repo → 框架预设选 None，构建输出目录填 `public` → 保存。
+打开 `wrangler.toml`，改这两行：
 
-### 4. 设置 ROOM_TOKEN secret（寝室令牌）
-
-在线上项目里设置加密环境变量（不出现在 git 里）：
-
-```bash
-wrangler pages secret put ROOM_TOKEN --project-name note-num
+```toml
+name = "note220"                              # 改成你想要的项目名（建议保持 note220，和 Pages 项目名一致）
+...
+[[kv_namespaces]]
+binding = "MESSAGES"
+id = "2a483d7164fa4dcc899adf1348cf9930"       # ← 换成你第 2 步拿到的 id
 ```
 
-按提示输入寝室 4 人共知的令牌（建议 6-8 位字符串，例如 `room-404`）。
-
-### 5. 推送代码触发部署
+改完 commit & push：
 
 ```bash
-git add .
-git commit -m "init: 寝室留言板"
+git add wrangler.toml
+git commit -m "chore: 填入自己的 KV id"
 git push
 ```
 
-Cloudflare 检测到 push 自动拉代码、构建、部署。之后每次 push 都自动部署。
+### 4. 在 Cloudflare 创建 Pages 项目（⚠️ 这一步最容易走错）
 
-### 令牌排查：输了令牌显示「不对」但确信没输错
+> **关键坑**：Cloudflare 新版 Dashboard 把入口合并到「Create application」，会默认带进 **Workers Builds 向导**——不要走那个！Workers Builds 自动生成的 API token 默认不带 `Pages:Edit` 权限，部署会报 `Authentication error [code: 10000]`。**必须走 Pages 经典的 Connect to Git 流程**。
 
-按顺序查：
+正确路径：
 
-**第 1 步：看报错具体是哪种**（前端已区分，2026-10-16 后部署的版本）
+1. Cloudflare Dashboard → 左侧 **Workers & Pages**
+2. 顶部点 **Create** 按钮
+3. 弹窗里**选「Pages」标签**（不是 Workers！）
+4. 点 **Connect to Git**
+5. 选你 fork 的 GitHub 仓库（首次会要授权 GitHub）
+6. 点 **Begin setup**，逐字段填：
 
-- 显示「**服务器未配置 ROOM_TOKEN（HTTP 500）**」→ 环境变量没生效，看第 2 步
-- 显示「**令牌不对，再试**」（HTTP 401）→ 变量在但值不匹配，看第 3 步
+| 字段 | 填什么 |
+|---|---|
+| **Project name** | `note220`（和 wrangler.toml 的 name 保持一致） |
+| **Production branch** | `main`（你 repo 的主分支） |
+| **Framework preset** | `None` |
+| **Build command** | **留空**（纯静态 + Functions，无构建步骤） |
+| **Build output directory** | `public` |
 
-**第 2 步：ROOM_TOKEN 变量没生效（HTTP 500）**
+7. **不要在这里加 Environment variables**——见下一步为什么
+8. 点 **Save and Deploy**
 
-你的 repo 里有 `wrangler.toml`（含 `pages_build_output_dir`），此时 **toml 是项目配置的唯一事实来源，Dashboard 里填的环境变量会被 toml 屏蔽**。所以向导里填的 ROOM_TOKEN 实际没传进 Functions。
+部署会自动跑起来（约 30 秒）。完成后你会拿到一个 `https://note220.pages.dev` 之类的域名，**此时访问会显示令牌输入页，但输什么都会报错**——因为 ROOM_TOKEN 还没设。继续下一步。
 
-解决办法（用 CLI 把 secret 写进项目，secret 不受 toml 屏蔽）：
+### 5. 设置寝室令牌（⚠️ 第二个坑）
+
+> **关键坑**：你的 repo 里有 `wrangler.toml`（含 `pages_build_output_dir`），这时 **toml 是项目配置的唯一事实来源，Dashboard 向导里填的环境变量会被 toml 屏蔽，实际不传进 Functions**。所以 ROOM_TOKEN 必须用 CLI 写成 secret（secret 不受 toml 屏蔽）。
 
 ```bash
-npm install -g wrangler     # 如果还没装
-wrangler login              # 浏览器登录（同一 Cloudflare 账号）
 npx wrangler pages secret put ROOM_TOKEN --project-name note220
-# 提示输入值时，输入你的寝室令牌（如 220），回车
+# 提示 "Enter a secret value:" 时输入寝室令牌（建议 6-8 位，如 dorm4-220），回车
+# 看到 "✨ Success! Uploaded secret ROOM_TOKEN" 就成了
 ```
 
-然后触发一次重新部署：Dashboard → note220 项目 → Deployments → 最近一次部署右侧「⋯」→ **Retry deployment**（或本地随便改点东西 `git push`）。
+**令牌强度建议**：别用 `220` 这种 3 位纯数字，公网上几秒就能 brute force 完。用 `dorm4-220`、`note-220` 这种 6-8 位混合字符串。
 
-**第 3 步：变量在但值不匹配（HTTP 401）**
+### 6. 触发重新部署（让 secret 生效）
 
-- Dashboard → note220 → Settings → Environment variables → 确认 Production 环境的 `ROOM_TOKEN` 值（加密的看不到明文，只能编辑重设）
-- 值前后**别带空格**，别用中文引号
-- 改完后 Retry deployment 一次
+> **关键坑**：Pages secrets 是部署时注入到运行环境的，**写入后必须重新部署一次才生效**。光写 secret 不重新部署，访问还是 500。
 
-**顺带的安全建议**：`220` 只有 3 位纯数字，公网上几秒就能 brute force 完。建议换成 6-8 位混合字符串（如 `note-220`、`dorm4-220`），改法同上（secret 重设 + Retry）。
+任选一种触发：
+
+- **Dashboard**：note220 项目 → Deployments → 最近一次部署右侧「⋯」→ **Retry deployment**
+- **或本地**：随便改点东西 `git push`（自动触发新部署）
+
+部署完成后（状态变绿），刷新域名输令牌，**能进留言板就成了**。
+
+---
+
+## 常见报错排查
+
+### `Authentication error [code: 10000]`
+
+**原因**：你走的是 Workers Builds 向导，自动生成的 API token 缺 `Pages:Edit` 权限。
+
+**解法**：删掉那个项目，按上面「第 4 步」走 **Pages → Connect to Git** 老流程。
+
+### 服务器未配置 ROOM_TOKEN（HTTP 500）
+
+**原因**：ROOM_TOKEN 没设，或设了但没重新部署。
+
+**解法**：按「第 5 步」用 CLI 写 secret，然后按「第 6 步」Retry deployment。
+
+### 令牌不对，再试（HTTP 401）
+
+**原因**：ROOM_TOKEN 设了但值和你输的不匹配。
+
+**解法**：重新跑 `npx wrangler pages secret put ROOM_TOKEN --project-name note220`，输入正确值，再 Retry deployment。
+
+### 部署成功但页面 404 / 旧版本
+
+**原因**：CDN 缓存。等 1-2 分钟，或硬刷新（Ctrl+F5）。
+
+---
+
+## 日常更新
+
+部署已经连了 GitHub，以后改代码只要：
+
+```bash
+git add .
+git commit -m "..."
+git push
+```
+
+Cloudflare 自动拉代码重新部署，约 30 秒生效。
+
+---
 
 ## 本地开发
 
 ```bash
-npm install              # 装 wrangler（可选）
+npm install
 wrangler pages dev ./public --kv MESSAGES --var ROOM_TOKEN:devtoken
 ```
 
-打开 http://localhost:8788，令牌输 `devtoken` 即可。
+打开 http://localhost:8788，令牌输 `devtoken` 即可。改代码会热重载。
 
 ## 数据结构
 
@@ -151,7 +219,9 @@ KV 里一个 key 存所有留言：
 
 ## 想改的事
 
-- 想让令牌更严？改 `functions/api/auth.js` 里的 `Max-Age`，或者每次访问都要重输
-- 想分多个主题页？多创建几个 KV key（`messages:shopping`、`messages:talk` 等），前端加 URL 路由
-- 想显示作者名（不是匿名）？把 `user_hash` 改成 `localStorage` 里存的自定义昵称
-- 想加 Markdown？前端加一个 markdown-it 渲染（注意保持 escape 顺序：先 escape 再 markdown 再 linkify）
+- **改令牌**：重新跑 `wrangler pages secret put ROOM_TOKEN --project-name note220` + Retry deployment
+- **想让令牌每次访问都要重输**：改 `functions/api/auth.js` 里的 `Max-Age`（现在是 1 年）
+- **想分多个主题页**：多创建几个 KV key（`messages:shopping`、`messages:talk` 等）+ 前端加 URL 路由
+- **想显示作者真名（不匿名）**：把 `user_hash` 改成 localStorage 里存的自定义昵称
+- **想加 Markdown**：前端加 markdown-it 渲染（注意渲染顺序：先 escape 再 markdown 再 linkify，防 XSS）
+- **想升级 SQL 查询**（按时间/作者筛选）：迁 KV 到 D1

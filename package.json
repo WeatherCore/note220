@@ -1,5 +1,5 @@
 {
-  "name": "note-num",
+  "name": "note220",
   "version": "1.0.0",
   "description": "寝室自用留言板，部署在 Cloudflare Pages + KV",
   "private": true,

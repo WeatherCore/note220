@@ -1,4 +1,4 @@
-# 寝室留言板 (note-num)
+# 寝室留言板 (note220)
 
 寝室自用版 note.ms 替代品。部署在 Cloudflare Pages + KV，匿名接力留言板，无登录系统，门口令牌放行。
 
@@ -29,46 +29,48 @@ note-num/
 └── README.md
 ```
 
-## 一次性配置（Cloudflare 后台，约 5 分钟）
+## 一次性配置（Cloudflare 后台）
 
-### 1. 安装 wrangler（本地 CLI）
+> 前置：KV 命名空间已创建，id 已填进 `wrangler.toml`（✅ 已完成）。`ROOM_TOKEN` 不用提前设，向导里填。
 
-```bash
-npm install -g wrangler   # 或 npx wrangler
-wrangler login            # 浏览器登录 Cloudflare 账号
-```
-
-### 2. 创建 KV 命名空间
+### 步骤 0：先把本地 wrangler.toml 推上 GitHub
 
 ```bash
-wrangler kv namespace create MESSAGES
-```
-
-输出形如 `id = "abcd1234..."`。把这个 id 填进 `wrangler.toml` 的 `[[kv_namespaces]] id = "..."`。
-
-### 3. 创建 Pages 项目
-
-去 Cloudflare 控制台 → Workers & Pages → Create → Pages → Connect to Git → 选这个 repo → 框架预设选 None，构建输出目录填 `public` → 保存。
-
-### 4. 设置 ROOM_TOKEN secret（寝室令牌）
-
-在线上项目里设置加密环境变量（不出现在 git 里）：
-
-```bash
-wrangler pages secret put ROOM_TOKEN --project-name note-num
-```
-
-按提示输入寝室 4 人共知的令牌（建议 6-8 位字符串，例如 `room-404`）。
-
-### 5. 推送代码触发部署
-
-```bash
-git add .
-git commit -m "init: 寝室留言板"
+git add wrangler.toml
+git commit -m "chore: 对齐项目名 note220"
 git push
 ```
 
-Cloudflare 检测到 push 自动拉代码、构建、部署。之后每次 push 都自动部署。
+⚠️ 必须先 push：向导部署时用的是 GitHub 上的 `wrangler.toml`，本地没推上去会导致部署名对不上（远端还是 `note-num`，会和向导里的 `note220` 冲突）。
+
+### 步骤 1：Dashboard 向导逐字段对照
+
+| 界面字段 | 填什么 | 说明 |
+|---|---|---|
+| **项目名称** | `note220`（默认） | 保持和 `wrangler.toml` 里的 `name` 一致即可 |
+| **构建命令** | **留空** | 纯静态 + Functions，没有任何构建步骤 |
+| **部署命令** | `npx wrangler pages deploy` | ⚠️ 把默认的 `npx wrangler deploy` 改成这个——显式按 Pages 项目部署，name 和输出目录自动从 wrangler.toml 读 |
+| **预览命令** | 留空 | 非必填；如果界面不让留空，填 `npx wrangler pages deploy` |
+| **启用预览构建** | 关 | 省构建额度，PR 预览用不上 |
+| **使用 Cloudflare Access 保护** | 关 | 我们有自己的令牌 |
+| **路径** | `/`（默认） | 不动 |
+| **API 令牌** | 不动 | 「将自动创建新令牌」就好 |
+| **变量名称** | `ROOM_TOKEN` | 寝室门口令牌的变量名，代码里 `env.ROOM_TOKEN` 读的就是它 |
+| **变量值** | 寝室令牌（如 `room-404`） | 6-8 位，4 人共知。**务必点旁边的「加密」**，加密后 dashboard 里也看不到明文 |
+
+### 步骤 2：点「部署」
+
+向导会自动从 GitHub 拉代码 → 构建 → 部署。成功后访问 `https://note220.pages.dev`（具体域名以部署完页面显示为准），输令牌能进留言板就通了。
+
+之后日常更新 = 本地 `git push`，Cloudflare 自动重新拉取部署。
+
+### 令牌后续想改？
+
+Dashboard → 你的项目 → Settings → 环境变量（Variables）→ 编辑 `ROOM_TOKEN` 的值 → 保存后下次部署生效。或者用 CLI：
+
+```bash
+npx wrangler pages secret put ROOM_TOKEN --project-name note220
+```
 
 ## 本地开发
 

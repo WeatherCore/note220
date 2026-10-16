@@ -1,4 +1,4 @@
-name = "note-num"
+name = "note220"
 compatibility_date = "2024-09-25"
 pages_build_output_dir = "./public"
 
@@ -8,7 +8,8 @@ pages_build_output_dir = "./public"
 binding = "MESSAGES"
 id = "2a483d7164fa4dcc899adf1348cf9930"
 
-# ROOM_TOKEN 用 secret 设置（不会出现在代码/git 里）：
-#   npx wrangler pages secret put ROOM_TOKEN --project-name note-num
+# ROOM_TOKEN（寝室令牌）不用写在这里，两种方式任选：
+# 1. Dashboard 部署向导的「变量」里填：变量名称 ROOM_TOKEN，值=寝室令牌，点「加密」（推荐，见 README）
+# 2. 命令行：npx wrangler pages secret put ROOM_TOKEN --project-name note220
 # 本地开发时用 .dev.vars 文件：
 #   echo "ROOM_TOKEN=devtoken" > .dev.vars

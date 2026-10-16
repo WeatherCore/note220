@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>寝室留言板</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #fafafa;
+      color: #222;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 24px 16px 80px;
+    }
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+      margin: 0 0 4px;
+      color: #1a1a1a;
+    }
+    .hint {
+      font-size: 12px;
+      color: #888;
+      margin: 0 0 16px;
+      line-height: 1.5;
+    }
+    /* 令牌输入页 */
+    .auth-wrap {
+      min-height: 60vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .auth-box {
+      width: 100%;
+      max-width: 360px;
+      padding: 32px 24px;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    }
+    .auth-box h1 { text-align: center; margin-bottom: 8px; }
+    .auth-box .hint { text-align: center; }
+    .auth-box input {
+      width: 100%;
+      padding: 11px 12px;
+      font-size: 14px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .auth-box input:focus { border-color: #4a90e2; }
+    .auth-box button {
+      width: 100%;
+      padding: 11px;
+      font-size: 14px;
+      background: #4a90e2;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .auth-box button:hover { background: #3a7bc8; }
+    .auth-box button:disabled { background: #aaa; cursor: not-allowed; }
+    .auth-box .err {
+      color: #d33;
+      font-size: 12px;
+      margin-top: 10px;
+      min-height: 16px;
+      text-align: center;
+    }
+    /* 留言板 */
+    .composer {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+      align-items: stretch;
+    }
+    .composer textarea {
+      flex: 1;
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: inherit;
+      line-height: 1.5;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      resize: vertical;
+      min-height: 72px;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .composer textarea:focus { border-color: #4a90e2; }
+    .composer button {
+      padding: 0 22px;
+      font-size: 14px;
+      background: #4a90e2;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .composer button:hover { background: #3a7bc8; }
+    .composer button:disabled { background: #aaa; cursor: not-allowed; }
+    .composer-hint {
+      font-size: 11px;
+      color: #aaa;
+      margin-top: 4px;
+    }
+    /* 留言列表 */
+    .messages { list-style: none; padding: 0; margin: 0; }
+    .message {
+      display: flex;
+      gap: 12px;
+      padding: 14px 0;
+      border-bottom: 1px solid #eee;
+    }
+    .message:last-child { border-bottom: none; }
+    .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .msg-body { flex: 1; min-width: 0; }
+    .msg-meta {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 4px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .msg-hash {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      color: #666;
+      background: #f0f0f0;
+      padding: 1px 6px;
+      border-radius: 3px;
+    }
+    .msg-text {
+      font-size: 14px;
+      line-height: 1.6;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      white-space: pre-wrap;
+    }
+    .msg-text a {
+      color: #4a90e2;
+      text-decoration: none;
+    }
+    .msg-text a:hover { text-decoration: underline; }
+    .empty, .loading {
+      text-align: center;
+      color: #aaa;
+      font-size: 13px;
+      padding: 36px 0;
+    }
+    .self-badge {
+      font-size: 10px;
+      color: #4a90e2;
+      border: 1px solid #4a90e2;
+      padding: 0 5px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"><div class="loading">加载中…</div></div>
+  <script>
+    // ============ 工具函数 ============
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+    function linkify(s) {
+      // 在已 escape 的字符串上做 URL 自动链接
+      return s.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+    }
+    function relTime(ts) {
+      const now = Date.now();
+      const diff = Math.floor((now - ts * 1000) / 1000);
+      if (diff < 0) return '刚刚';
+      if (diff < 60) return '刚刚';
+      if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
+      if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
+      if (diff < 7 * 86400) return Math.floor(diff / 86400) + ' 天前';
+      const d = new Date(ts * 1000);
+      const pad = n => String(n).padStart(2, '0');
+      return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    }
+    function getAnon() {
+      let hash = localStorage.getItem('anon_hash');
+      let color = localStorage.getItem('anon_color');
+      if (!hash) {
+        const buf = new Uint8Array(4);
+        crypto.getRandomValues(buf);
+        hash = Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
+        const hue = Math.floor(Math.random() * 360);
+        color = 'hsl(' + hue + ', 65%, 55%)';
+        localStorage.setItem('anon_hash', hash);
+        localStorage.setItem('anon_color', color);
+      }
+      return { hash: hash, color: color };
+    }
+
+    // ============ 路由：根据登录态渲染不同 UI ============
+    const root = document.getElementById('root');
+
+    function renderAuth() {
+      root.innerHTML =
+        '<div class="auth-wrap">' +
+          '<div class="auth-box">' +
+            '<h1>寝室留言板</h1>' +
+            '<p class="hint">输入寝室共知令牌进入</p>' +
+            '<input id="token-input" type="password" placeholder="令牌" autocomplete="off">' +
+            '<button id="token-btn">进入</button>' +
+            '<div class="err" id="token-err"></div>' +
+          '</div>' +
+        '</div>';
+      const input = document.getElementById('token-input');
+      const btn = document.getElementById('token-btn');
+      const err = document.getElementById('token-err');
+      async function submit() {
+        const token = input.value.trim();
+        if (!token) { err.textContent = '请输入令牌'; return; }
+        btn.disabled = true; btn.textContent = '验证中…';
+        try {
+          const r = await fetch('/api/auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: token }),
+          });
+          btn.disabled = false; btn.textContent = '进入';
+          if (r.ok) {
+            await boot();
+          } else {
+            err.textContent = '令牌不对，再试';
+          }
+        } catch (e) {
+          btn.disabled = false; btn.textContent = '进入';
+          err.textContent = '网络错误';
+        }
+      }
+      btn.onclick = submit;
+      input.onkeydown = function (e) { if (e.key === 'Enter') submit(); };
+      input.focus();
+    }
+
+    function renderBoard(messages) {
+      const self = getAnon();
+      const listHtml = messages.length === 0
+        ? '<div class="empty">还没人留言，做第一个吧。</div>'
+        : '<ul class="messages">' + messages.map(function (m) {
+            const isSelf = m.user_hash === self.hash;
+            return (
+              '<li class="message">' +
+                '<div class="avatar" style="background:' + escapeHtml(m.color || '#888') + '"></div>' +
+                '<div class="msg-body">' +
+                  '<div class="msg-meta">' +
+                    '<span class="msg-hash">#' + escapeHtml(m.user_hash || 'unknown') + '</span>' +
+                    (isSelf ? '<span class="self-badge">你</span>' : '') +
+                    '<span>' + escapeHtml(relTime(m.ts)) + '</span>' +
+                  '</div>' +
+                  '<div class="msg-text">' + linkify(escapeHtml(m.text)) + '</div>' +
+                '</div>' +
+              '</li>'
+            );
+          }).join('') + '</ul>';
+
+      root.innerHTML =
+        '<div class="container">' +
+          '<h1>寝室留言板</h1>' +
+          '<p class="hint">你是 <span class="msg-hash">#' + escapeHtml(self.hash) + '</span>，别人靠这串识别你。最新在顶。Ctrl/⌘+Enter 发送。</p>' +
+          '<div class="composer">' +
+            '<textarea id="msg-input" placeholder="留点什么…" maxlength="2000"></textarea>' +
+            '<button id="msg-btn">发</button>' +
+          '</div>' +
+          '<div id="list">' + listHtml + '</div>' +
+        '</div>';
+
+      const ta = document.getElementById('msg-input');
+      const btn = document.getElementById('msg-btn');
+      async function post() {
+        const text = ta.value.trim();
+        if (!text) return;
+        btn.disabled = true; btn.textContent = '…';
+        try {
+          const r = await fetch('/api/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: text, user_hash: self.hash, color: self.color }),
+          });
+          btn.disabled = false; btn.textContent = '发';
+          if (r.ok) {
+            ta.value = '';
+            await refresh();
+            ta.focus();
+          } else {
+            alert('发送失败 (HTTP ' + r.status + ')');
+          }
+        } catch (e) {
+          btn.disabled = false; btn.textContent = '发';
+          alert('网络错误');
+        }
+      }
+      btn.onclick = post;
+      ta.onkeydown = function (e) {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); post(); }
+      };
+      ta.focus();
+    }
+
+    async function refresh() {
+      const list = document.getElementById('list');
+      if (list) list.innerHTML = '<div class="loading">加载中…</div>';
+      try {
+        const r = await fetch('/api/messages');
+        if (r.ok) {
+          const data = await r.json();
+          renderBoard(data.messages);
+        }
+      } catch (e) {
+        // 忽略，保留原列表
+      }
+    }
+
+    async function boot() {
+      const loadingEl = document.getElementById('loading') || root;
+      root.innerHTML = '<div class="loading">加载中…</div>';
+      try {
+        const r = await fetch('/api/messages');
+        if (r.status === 401) {
+          renderAuth();
+        } else if (r.ok) {
+          const data = await r.json();
+          renderBoard(data.messages);
+        } else {
+          root.innerHTML = '<div class="container"><h1>出错了</h1><p class="hint">HTTP ' + r.status + '，稍后再试。</p></div>';
+        }
+      } catch (e) {
+        root.innerHTML = '<div class="container"><h1>连不上</h1><p class="hint">网络错误，刷新试试。</p></div>';
+      }
+    }
+
+    boot();
+  </script>
+</body>
+</html>

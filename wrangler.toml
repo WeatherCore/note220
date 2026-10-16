@@ -2,7 +2,7 @@ name = "note220"
 compatibility_date = "2024-09-25"
 pages_build_output_dir = "./public"
 
-# Cloudflare KV 命名空间绑定
+# Cloudflare KV 命名空间绑定（存两类 key：messages:<房间名> 消息 + session:<会话id> 登录会话）
 # id 需要在 Cloudflare 后台创建后填入（参考 README.md 的"一次性配置"）
 [[kv_namespaces]]
 binding = "MESSAGES"

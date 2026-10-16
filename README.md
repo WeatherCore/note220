@@ -1,17 +1,15 @@
-# 寝室留言板 (note220)
+# note220 · 快传板
 
-寝室自用版 note.ms 替代品。部署在 Cloudflare Pages + KV，匿名接力留言板，无登录系统，门口令牌放行。
+免登录的跨设备传输板：陌生电脑 ↔ 手机之间传文字、代码片段、链接，朋友之间快速递东西，不用登录 QQ/微信。部署在 Cloudflare Pages + KV，无账号系统，门口令牌放行。多房间设计：固定房间名 = 常驻留言板，随机房间名 = 一次性传输管道（origin：寝室自用版 note.ms 替代品）。
 
 ## 功能
 
-- **接力留言板**：每次访问看到的是「前一人留的言」，自己输入一条新留言追加到时间线顶部，旧留言不被覆盖
-- **匿名身份**：首次访问生成随机哈希存 localStorage（同设备=同一身份），哈希配 HSL 色块头像，扫一眼区分谁发的
-- **滚动保留最近 200 条**（KV 单 key 撑住几千条没压力，200 是为了不变成垃圾场）
-- **每条带相对时间**（3 分钟前 / 10 月 16 日 18:30）
-- **纯文本 + URL 自动链接**
-- **最新在顶 + 输入框在顶**：进入第一眼 = 最新一条 + 输入框
-- **门口令牌**：Cloudflare 部署是公网 URL，加一个寝室共知令牌防外人。这不是登录系统，没账号没 session
-- **Ctrl/⌘+Enter 快速发送**
+- **多房间**：URL 带 `#r=房间名` 即独立房间（独立消息流），链接即分享——发链接给朋友 = 分享这个房间。固定房间名当留言板用，随机房间名做一次性传输管道
+- **免登录会话**：输一次令牌 → 拿到 32 位随机会话。默认 30 分钟过期（陌生电脑友好），勾「记住我」1 年免输（自己的设备）；「退出」按钮随时吊销
+- **大代码片段**：单条上限 10 万字符（约一个完整源文件）。超长消息自动折叠成「展开」，对方点「复制」一键拿走全文
+- **自动焚毁**：房间 3 天没人发言整间自动清空（活跃房间每次发言续期），敏感片段不永久留底
+- **昵称身份**：首次访问随机分一个名字，点名字可改，接收方认得出是谁发的
+- **每条带相对时间**、**Ctrl+Enter 快速发送**、纯文本 + URL 自动链接、最新在顶 + 输入框在顶
 
 ## 项目结构
 
@@ -21,8 +19,8 @@ note220/
 │   └── index.html        # 前端单页（含令牌输入页 + 留言板 UI + 全部 JS）
 ├── functions/
 │   └── api/
-│       ├── auth.js      # POST /api/auth  校验令牌 → Set-Cookie
-│       └── messages.js  # GET/POST /api/messages  读写 KV
+│       ├── auth.js      # POST /api/auth 令牌换随机会话 → Set-Cookie sid；DELETE /api/auth 退出吊销
+│       └── messages.js  # GET/POST /api/messages?room=xxx  按房间读写 KV
 ├── wrangler.toml         # Cloudflare 配置（KV 绑定 + 部署输出目录）
 ├── package.json
 ├── .gitignore
@@ -181,47 +179,52 @@ wrangler pages dev ./public --kv MESSAGES --var ROOM_TOKEN:devtoken
 
 ## 数据结构
 
-KV 里一个 key 存所有留言：
+KV 里两类 key：
 
-- key: `messages`
-- value: JSON 数组（最新在前）
+- `messages:<房间名>` — 该房间的消息。value 为 JSON 数组（最新在前），单条 ≤10 万字符、每房间保留 50 条、总长 ≤4MB，每次写入滑动续期 3 天 TTL
+- `session:<会话id>` — 登录会话。value 为 `sha256(ROOM_TOKEN)` 指纹（**不存令牌原文**），TTL 30 分钟或 1 年
 
 ```json
 [
   {
     "id": "a3f9b1c2...",
-    "text": "谁去倒垃圾",
-    "user_hash": "a3f9b1c2",
+    "text": "npm install 半天卡住的同学看这个 config：…",
+    "name": "老王",
     "color": "hsl(123, 65%, 55%)",
     "ts": 1697000000
   }
 ]
 ```
 
-新留言 `unshift` 到数组头，`slice(0, 200)` 滚动裁剪。
+新留言 `unshift` 到数组头，`slice(0, 50)` 滚动裁剪；超 4MB 时从最旧的开始丢。
 
 ## API
 
 | 方法 | 路径 | 鉴权 | 作用 |
 |------|------|------|------|
 | GET  | `/`                | —    | 静态前端 |
-| POST | `/api/auth`        | —    | 校验令牌，对了设 `room_token` HttpOnly cookie（一年期）|
-| GET  | `/api/messages`    | cookie | 返回最近 200 条 |
-| POST | `/api/messages`    | cookie | 追加一条，body `{text, user_hash, color}` |
+| POST | `/api/auth`        | —    | 校验令牌，签发随机 sid 会话，body `{token, remember}`（默认 30 分钟 / 记住我 1 年）|
+| DELETE | `/api/auth`     | —    | 退出：吊销当前会话 + 清 cookie |
+| GET  | `/api/messages?room=xxx` | cookie | 返回该房间最近 50 条 |
+| POST | `/api/messages`    | cookie | 追加一条，body `{room, text, name, color}` |
 
 ## 安全边界
 
-- 令牌是 `HttpOnly` cookie，前端 JS 读不到，防 XSS 偷
-- `SameSite=Lax`，防基本 CSRF
+- **会话与令牌分离**（为陌生电脑设计）：cookie 只存 32 位随机 sid，**不存令牌原文**；KV 会话掺 `sha256(令牌)` 指纹，改令牌 = 全部旧会话自动失效；「退出」即刻吊销单会话
+- cookie 为 `HttpOnly`（JS 读不到，防 XSS 偷）+ `Secure` + `SameSite=Lax`（防基本 CSRF）；陌生电脑默认 30 分钟过期
+- 房间名服务端正则白名单（1-32 位字母/数字/`-`/`_`），防写出野 key
+- 用户文本服务端截断（单条 10 万字符、每房间总长 4MB），输出前端先 HTML escape 再做 URL 自动链接，防 XSS
 - 服务器端常量时间比较令牌，防时序攻击（寝室场景其实用不到，养成习惯）
-- 用户输入文本服务端长度截断（最多 2000 字），输出前端先 HTML escape 再做 URL 自动链接，防 XSS
-- Cloudflare 默认有边缘 DDoS 防护 + 人机验证（按需开）
+- **诚实声明的软肋**（自用系统取舍）：
+  - 房间是软隔离——拿到令牌的人可以访问任意房间名，随机房间名只是「不猜就看不见」
+  - 身份可伪造——昵称纯客户端自报、无认证，别在这里传救命级别的东西
+  - `/api/auth` 未设防爆破（令牌请用足够长的随机串）、并发发消息存在后写覆盖丢消息窗口（KV 最终一致）、无速率限制
 
 ## 想改的事
 
-- **改令牌**：重新跑 `wrangler pages secret put ROOM_TOKEN --project-name note220` + Retry deployment
-- **想让令牌每次访问都要重输**：改 `functions/api/auth.js` 里的 `Max-Age`（现在是 1 年）
-- **想分多个主题页**：多创建几个 KV key（`messages:shopping`、`messages:talk` 等）+ 前端加 URL 路由
-- **想显示作者真名（不匿名）**：把 `user_hash` 改成 localStorage 里存的自定义昵称
+- **改令牌**：重新跑 `wrangler pages secret put ROOM_TOKEN --project-name note220` + Retry deployment（全部旧会话自动失效，所有设备重输）
+- **想调会话寿命**：改 `functions/api/auth.js` 顶部的 `SESSION_SHORT`（默认 30 分钟）/ `SESSION_REMEMBER`（记住我 1 年）
+- **想调房间保留策略**：改 `functions/api/messages.js` 顶部的 `ROOM_TTL`（自动焚毁天数）/ `MAX`（保留条数）/ `MAX_TEXT`（单条上限）
 - **想加 Markdown**：前端加 markdown-it 渲染（注意渲染顺序：先 escape 再 markdown 再 linkify，防 XSS）
-- **想升级 SQL 查询**（按时间/作者筛选）：迁 KV 到 D1
+- **被 4MB 全量拉取拖慢时**：改两段式加载（列表只回每条前 500 字预览 + 单条详情接口按需拉全文）
+- **要按时间/作者筛选**：迁 KV 到 D1（append 型 INSERT 还能顺带消灭并发丢消息窗口）

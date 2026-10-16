@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>留言板-note简易版</title>
+  <title>note220 · 快传</title>
   <style>
     * { box-sizing: border-box; }
     html, body {
@@ -19,18 +19,42 @@
       margin: 0 auto;
       padding: 24px 16px 80px;
     }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
     h1 {
       font-size: 20px;
       font-weight: 600;
-      margin: 0 0 4px;
+      margin: 0;
       color: #1a1a1a;
     }
+    .actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .mini-btn {
+      padding: 4px 10px;
+      font-size: 12px;
+      background: #fff;
+      color: #4a90e2;
+      border: 1px solid #4a90e2;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .mini-btn:hover { background: #eef4fc; }
     .hint {
       font-size: 12px;
       color: #888;
-      margin: 0 0 16px;
-      line-height: 1.5;
+      margin: 6px 0 16px;
+      line-height: 1.6;
     }
+    .chip {
+      color: #4a90e2;
+      cursor: pointer;
+      border-bottom: 1px dashed #9cc3ee;
+    }
+    .chip:hover { border-bottom-style: solid; }
     /* 令牌输入页 */
     .auth-wrap {
       min-height: 60vh;
@@ -49,7 +73,7 @@
     }
     .auth-box h1 { text-align: center; margin-bottom: 8px; }
     .auth-box .hint { text-align: center; }
-    .auth-box input {
+    .auth-box input[type=password] {
       width: 100%;
       padding: 11px 12px;
       font-size: 14px;
@@ -59,7 +83,18 @@
       outline: none;
       transition: border-color .15s;
     }
-    .auth-box input:focus { border-color: #4a90e2; }
+    .auth-box input[type=password]:focus { border-color: #4a90e2; }
+    .remember {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 14px;
+      cursor: pointer;
+      line-height: 1.5;
+    }
+    .remember input { margin-top: 2px; }
     .auth-box button {
       width: 100%;
       padding: 11px;
@@ -84,7 +119,7 @@
     .composer {
       display: flex;
       gap: 8px;
-      margin-bottom: 24px;
+      margin-bottom: 8px;
       align-items: stretch;
     }
     .composer textarea {
@@ -116,7 +151,7 @@
     .composer-hint {
       font-size: 11px;
       color: #aaa;
-      margin-top: 4px;
+      margin: 0 0 20px;
     }
     /* 留言列表 */
     .messages { list-style: none; padding: 0; margin: 0; }
@@ -144,14 +179,26 @@
       align-items: center;
       flex-wrap: wrap;
     }
-    .msg-hash {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 11px;
-      color: #666;
+    .msg-author {
+      font-weight: 600;
+      font-size: 12px;
+      color: #333;
       background: #f0f0f0;
       padding: 1px 6px;
       border-radius: 3px;
     }
+    .copy-btn {
+      margin-left: auto;
+      padding: 1px 8px;
+      font-size: 11px;
+      background: #f0f0f0;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      color: #555;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .copy-btn:hover { background: #e2e2e2; }
     .msg-text {
       font-size: 14px;
       line-height: 1.6;
@@ -164,6 +211,13 @@
       text-decoration: none;
     }
     .msg-text a:hover { text-decoration: underline; }
+    details summary {
+      cursor: pointer;
+      color: #4a90e2;
+      font-size: 12px;
+      padding: 2px 0;
+      user-select: none;
+    }
     .empty, .loading {
       text-align: center;
       color: #aaa;
@@ -198,7 +252,6 @@
     function relTime(ts) {
       const now = Date.now();
       const diff = Math.floor((now - ts * 1000) / 1000);
-      if (diff < 0) return '刚刚';
       if (diff < 60) return '刚刚';
       if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
       if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
@@ -207,36 +260,57 @@
       const pad = n => String(n).padStart(2, '0');
       return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
     }
-    function getAnon() {
+
+    // ============ 身份（昵称 + 颜色，存 localStorage） ============
+    function getIdentity() {
       let hash = localStorage.getItem('anon_hash');
-      let color = localStorage.getItem('anon_color');
       if (!hash) {
         const buf = new Uint8Array(4);
         crypto.getRandomValues(buf);
         hash = Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
-        const hue = Math.floor(Math.random() * 360);
-        color = 'hsl(' + hue + ', 65%, 55%)';
         localStorage.setItem('anon_hash', hash);
+      }
+      let color = localStorage.getItem('anon_color');
+      if (!color) {
+        color = 'hsl(' + Math.floor(Math.random() * 360) + ', 65%, 55%)';
         localStorage.setItem('anon_color', color);
       }
-      return { hash: hash, color: color };
+      let name = localStorage.getItem('anon_name');
+      if (!name) {
+        name = '#' + hash; // 没改过名时用随机 hash 当默认名
+        localStorage.setItem('anon_name', name);
+      }
+      return { name: name, color: color };
+    }
+
+    // ============ 房间：URL #r=房间名 ============
+    function getRoom() {
+      const p = new URLSearchParams(location.hash.replace(/^#/, ''));
+      const r = p.get('r') || 'main';
+      return /^[a-zA-Z0-9_-]{1,32}$/.test(r) ? r : 'main';
     }
 
     // ============ 路由：根据登录态渲染不同 UI ============
     const root = document.getElementById('root');
+    let currentMessages = []; // 供复制按钮按索引取原文
 
     function renderAuth() {
       root.innerHTML =
         '<div class="auth-wrap">' +
           '<div class="auth-box">' +
-            '<h1>寝室留言板</h1>' +
-            '<p class="hint">输入寝室共知令牌进入</p>' +
+            '<h1>note220</h1>' +
+            '<p class="hint">输入共知令牌进入</p>' +
             '<input id="token-input" type="password" placeholder="令牌" autocomplete="off">' +
+            '<label class="remember">' +
+              '<input type="checkbox" id="remember-chk"> ' +
+              '<span>记住我（自己的设备勾：1 年免输；陌生电脑别勾：30 分钟自动过期）</span>' +
+            '</label>' +
             '<button id="token-btn">进入</button>' +
             '<div class="err" id="token-err"></div>' +
           '</div>' +
         '</div>';
       const input = document.getElementById('token-input');
+      const chk = document.getElementById('remember-chk');
       const btn = document.getElementById('token-btn');
       const err = document.getElementById('token-err');
       async function submit() {
@@ -247,13 +321,13 @@
           const r = await fetch('/api/auth', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: token }),
+            body: JSON.stringify({ token: token, remember: chk.checked }),
           });
           btn.disabled = false; btn.textContent = '进入';
           if (r.ok) {
-            await boot();
+            await loadBoard();
           } else if (r.status === 500) {
-            err.textContent = '服务器未配置 ROOM_TOKEN（HTTP 500），看 README「令牌排查」';
+            err.textContent = '服务器未配置 ROOM_TOKEN（HTTP 500），看 README 排查';
           } else if (r.status === 401) {
             err.textContent = '令牌不对，再试';
           } else {
@@ -270,21 +344,31 @@
     }
 
     function renderBoard(messages) {
-      const self = getAnon();
+      currentMessages = messages;
+      const room = getRoom();
+      const self = getIdentity();
       const listHtml = messages.length === 0
-        ? '<div class="empty">还没人留言，做第一个吧。</div>'
-        : '<ul class="messages">' + messages.map(function (m) {
-            const isSelf = m.user_hash === self.hash;
+        ? '<div class="empty">空房间。传点东西，把链接发出去。</div>'
+        : '<ul class="messages">' + messages.map(function (m, i) {
+            const author = m.name || m.user_hash || 'unknown'; // user_hash 兼容旧数据
+            const isSelf = author === self.name;
+            const bodyHtml = linkify(escapeHtml(m.text));
+            // 超长内容折叠成「展开」，避免大段代码撑爆页面
+            const textHtml = m.text.length > 2000
+              ? '<details><summary>展开全部 ' + m.text.length + ' 字</summary>' +
+                  '<div class="msg-text">' + bodyHtml + '</div></details>'
+              : '<div class="msg-text">' + bodyHtml + '</div>';
             return (
               '<li class="message">' +
                 '<div class="avatar" style="background:' + escapeHtml(m.color || '#888') + '"></div>' +
                 '<div class="msg-body">' +
                   '<div class="msg-meta">' +
-                    '<span class="msg-hash">#' + escapeHtml(m.user_hash || 'unknown') + '</span>' +
+                    '<span class="msg-author">' + escapeHtml(author) + '</span>' +
                     (isSelf ? '<span class="self-badge">你</span>' : '') +
                     '<span>' + escapeHtml(relTime(m.ts)) + '</span>' +
+                    '<button class="copy-btn" data-i="' + i + '">复制</button>' +
                   '</div>' +
-                  '<div class="msg-text">' + linkify(escapeHtml(m.text)) + '</div>' +
+                  textHtml +
                 '</div>' +
               '</li>'
             );
@@ -292,17 +376,29 @@
 
       root.innerHTML =
         '<div class="container">' +
-          '<h1>寝室留言板</h1>' +
-          '<p class="hint">你是 <span class="msg-hash">#' + escapeHtml(self.hash) + '</span>，别人靠这串识别你。最新在顶</p>' +
+          '<div class="topbar">' +
+            '<h1>note220</h1>' +
+            '<div class="actions">' +
+              '<button id="copy-link-btn" class="mini-btn">复制链接</button>' +
+              '<button id="logout-btn" class="mini-btn">退出</button>' +
+            '</div>' +
+          '</div>' +
+          '<p class="hint">' +
+            '房间 <span id="room-chip" class="chip">#' + escapeHtml(room) + '</span>（点击换房/开新房） · ' +
+            '你是 <span id="name-chip" class="chip">' + escapeHtml(self.name) + '</span>（点击改名） · ' +
+            '3 天没人发言本房间自动清空' +
+          '</p>' +
           '<div class="composer">' +
-            '<textarea id="msg-input" placeholder="留点什么…" maxlength="2000"></textarea>' +
+            '<textarea id="msg-input" placeholder="传点东西…（文字/代码/链接，单条上限 10 万字）" maxlength="100000"></textarea>' +
             '<button id="msg-btn">发</button>' +
           '</div>' +
+          '<div class="composer-hint">Ctrl/⌘ + Enter 发送 · 大段内容会折叠，对方点「复制」一键拿走</div>' +
           '<div id="list">' + listHtml + '</div>' +
         '</div>';
 
       const ta = document.getElementById('msg-input');
       const btn = document.getElementById('msg-btn');
+
       async function post() {
         const text = ta.value.trim();
         if (!text) return;
@@ -311,13 +407,20 @@
           const r = await fetch('/api/messages', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: text, user_hash: self.hash, color: self.color }),
+            body: JSON.stringify({
+              room: getRoom(),
+              text: text,
+              name: self.name,
+              color: self.color,
+            }),
           });
           btn.disabled = false; btn.textContent = '发';
           if (r.ok) {
             ta.value = '';
-            await refresh();
+            await loadBoard();
             ta.focus();
+          } else if (r.status === 401) {
+            renderAuth(); // 会话过期，回门口重新输令牌
           } else {
             alert('发送失败 (HTTP ' + r.status + ')');
           }
@@ -330,15 +433,68 @@
       ta.onkeydown = function (e) {
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); post(); }
       };
+
+      // 每条消息的「复制」按钮（事件委托，一次绑定管整个列表）
+      document.getElementById('list').addEventListener('click', async function (e) {
+        const t = e.target;
+        if (!t.classList || !t.classList.contains('copy-btn')) return;
+        const m = currentMessages[+t.getAttribute('data-i')];
+        if (!m) return;
+        try {
+          await navigator.clipboard.writeText(m.text);
+          t.textContent = '已复制';
+        } catch (err) {
+          t.textContent = '失败';
+        }
+        setTimeout(function () { t.textContent = '复制'; }, 1200);
+      });
+
+      // 点击房间名 → 换房 / 开新房
+      document.getElementById('room-chip').onclick = function () {
+        const v = prompt('房间名（1-32 位字母/数字/ - / _ ，输入即进入或创建）', getRoom());
+        if (v === null) return;
+        const clean = v.trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
+        if (clean && clean !== getRoom()) location.hash = 'r=' + clean;
+      };
+
+      // 点击自己的名字 → 改名
+      document.getElementById('name-chip').onclick = function () {
+        const v = prompt('你叫什么（发消息时显示，≤64 字符）', getIdentity().name);
+        if (v !== null && v.trim()) {
+          localStorage.setItem('anon_name', v.trim().slice(0, 64));
+          loadBoard();
+        }
+      };
+
+      // 复制本房间链接（发链接给朋友 = 分享这个房间）
+      document.getElementById('copy-link-btn').onclick = async function () {
+        const that = this;
+        try {
+          await navigator.clipboard.writeText(location.href);
+          that.textContent = '已复制';
+        } catch (err) {
+          that.textContent = '失败';
+        }
+        setTimeout(function () { that.textContent = '复制链接'; }, 1200);
+      };
+
+      // 用完退出：吊销会话 + 清 cookie，回门口
+      document.getElementById('logout-btn').onclick = async function () {
+        try { await fetch('/api/auth', { method: 'DELETE' }); } catch (e) {}
+        location.reload();
+      };
+
       ta.focus();
     }
 
-    async function refresh() {
-      const list = document.getElementById('list');
-      if (list) list.innerHTML = '<div class="loading">加载中…</div>';
+    async function loadBoard() {
+      const listEl = document.getElementById('list');
+      if (listEl) listEl.innerHTML = '<div class="loading">加载中…</div>';
       try {
-        const r = await fetch('/api/messages');
-        if (r.ok) {
+        const r = await fetch('/api/messages?room=' + encodeURIComponent(getRoom()));
+        if (r.status === 401) {
+          renderAuth();
+        } else if (r.ok) {
           const data = await r.json();
           renderBoard(data.messages);
         }
@@ -348,10 +504,9 @@
     }
 
     async function boot() {
-      const loadingEl = document.getElementById('loading') || root;
       root.innerHTML = '<div class="loading">加载中…</div>';
       try {
-        const r = await fetch('/api/messages');
+        const r = await fetch('/api/messages?room=' + encodeURIComponent(getRoom()));
         if (r.status === 401) {
           renderAuth();
         } else if (r.ok) {
@@ -364,6 +519,11 @@
         root.innerHTML = '<div class="container"><h1>连不上</h1><p class="hint">网络错误，刷新试试。</p></div>';
       }
     }
+
+    // 换房间（点房间名跳转 / 直接改 hash）时重拉数据
+    window.addEventListener('hashchange', function () {
+      loadBoard();
+    });
 
     boot();
   </script>

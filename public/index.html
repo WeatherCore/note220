@@ -252,8 +252,12 @@
           btn.disabled = false; btn.textContent = '进入';
           if (r.ok) {
             await boot();
-          } else {
+          } else if (r.status === 500) {
+            err.textContent = '服务器未配置 ROOM_TOKEN（HTTP 500），看 README「令牌排查」';
+          } else if (r.status === 401) {
             err.textContent = '令牌不对，再试';
+          } else {
+            err.textContent = '出错 (HTTP ' + r.status + ')';
           }
         } catch (e) {
           btn.disabled = false; btn.textContent = '进入';

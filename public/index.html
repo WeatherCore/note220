@@ -4,9 +4,27 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>note220 · 快传</title>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>
+    // 首屏数据请求提前到 <head> 发起:与后面的样式/字体/HTML 解析完全并行,
+    // 省掉「HTML 下载完 → 跑到 body 末尾才开始请求 API」的一整个来回。
+    // 结果挂在 window.__firstFetch 上,由 body 末尾的 boot() 消费一次。
+    window.__firstFetch = (function () {
+      try {
+        var p = new URLSearchParams(location.hash.replace(/^#/, ''));
+        var room = p.get('r') || 'main';
+        if (!/^[a-zA-Z0-9_-]{1,32}$/.test(room)) room = 'main';
+        return fetch('/api/messages?room=' + encodeURIComponent(room));
+      } catch (e) {
+        return null;
+      }
+    })();
+  </script>
+  <!-- 字体已改为自托管(/fonts.css + /fonts/*.woff2),并用 media 交换技巧异步加载:
+       渲染完全不阻塞,先用系统字体立刻出内容,woff2 到货后 swap。
+       之前外链 fonts.googleapis.com 在国内是重灾区——渲染阻塞的 CSS 请求挂起,
+       整页白屏干等,这是「其他设备打不开/慢」的最大原因。 -->
+  <link rel="stylesheet" href="/fonts.css" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="/fonts.css"></noscript>
   <style>
     /* ============================================================
        note220 · 视觉系统
@@ -762,7 +780,10 @@
     async function boot() {
       root.innerHTML = '<div class="loading">加载中…</div>';
       try {
-        const r = await fetch('/api/messages?room=' + encodeURIComponent(getRoom()));
+        // 优先消费 <head> 里提前发出的请求;没有(极端兜底)才现发
+        const first = window.__firstFetch;
+        window.__firstFetch = null;
+        const r = await (first || fetch('/api/messages?room=' + encodeURIComponent(getRoom())));
         if (r.status === 401) {
           renderAuth();
         } else if (r.ok) {

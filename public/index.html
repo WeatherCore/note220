@@ -351,17 +351,82 @@
       border-radius: 2px;
     }
 
-    details summary {
-      cursor: pointer;
-      color: var(--muted-2);
-      font-size: 12px;
-      padding: 2px 0 6px;
-      user-select: none;
-      border-bottom: 1px dashed var(--border-strong);
-      display: inline-block;
-      transition: color var(--t-fast) ease;
+    /* 折叠长内容:深色左色条 + 灰底卡片,一眼看出「这里有折叠」 */
+    details.fold {
+      margin-top: 4px;
+      border: 1px solid var(--border-strong);
+      border-left: 3px solid var(--fg);   /* 左侧深墨黑色条,主色强对比 */
+      border-radius: var(--radius);
+      background: #F5F5F4;               /* stone-100,和普通消息拉开层次 */
+      overflow: hidden;
     }
-    details summary:hover { color: var(--fg); }
+    details.fold > summary.fold-bar {
+      list-style: none;                   /* 去掉默认三角,自己画 */
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--fg);                   /* 主色,不再 muted 灰 */
+      user-select: none;
+      transition: background var(--t-fast) ease;
+    }
+    details.fold > summary.fold-bar::-webkit-details-marker { display: none; }
+    details.fold > summary.fold-bar::marker { display: none; content: ''; }
+    details.fold > summary.fold-bar::before {
+      content: '▸';
+      font-size: 10px;
+      color: var(--fg);
+      transition: transform var(--t-fast) ease;
+    }
+    details.fold[open] > summary.fold-bar::before { transform: rotate(90deg); }
+    details.fold > summary.fold-bar:hover { background: #EAEAE8; }
+    details.fold > summary.fold-bar:focus-visible {
+      outline: none;
+      box-shadow: inset 0 0 0 3px var(--ring);
+    }
+    .fold-tag {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      color: var(--on-accent);
+      background: var(--fg);             /* 深底白字 badge,强对比 */
+      padding: 1px 6px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+    .fold-label { font-weight: 500; }
+    .fold-label b { font-family: var(--font-mono); font-weight: 600; }
+    .fold-hint { color: var(--muted-2); }
+    .fold-preview {
+      padding: 4px 12px 10px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--muted-2);
+      border-top: 1px dashed var(--border-strong);
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      max-height: 132px;
+      overflow: hidden;
+      position: relative;
+      font-family: var(--font-mono);     /* 代码预览用等宽,凸显「这是代码片段」 */
+    }
+    /* 预览底部渐变,暗示「下面还有更多」 */
+    .fold-preview::after {
+      content: '';
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 22px;
+      background: linear-gradient(to bottom, transparent, #F5F5F4);
+      pointer-events: none;
+    }
+    /* 展开后:隐藏预览,只显示全文(全文懒加载注入) */
+    details.fold[open] > .fold-preview { display: none; }
+    .fold-full { padding: 8px 12px 10px; }
+    .fold-full:empty { display: none; }
 
     .empty, .loading {
       text-align: center;
@@ -511,12 +576,28 @@
         : '<ul class="messages">' + messages.map(function (m, i) {
             const author = m.name || m.user_hash || 'unknown'; // user_hash 兼容旧数据
             const isSelf = author === self.name;
-            const bodyHtml = linkify(escapeHtml(m.text));
-            // 超长内容折叠成「展开」，避免大段代码撑爆页面
-            const textHtml = m.text.length > 2000
-              ? '<details><summary>展开全部 ' + m.text.length + ' 字</summary>' +
-                  '<div class="msg-text">' + bodyHtml + '</div></details>'
-              : '<div class="msg-text">' + bodyHtml + '</div>';
+            // 超长内容:折叠 + 预览 + 懒加载全文。
+            // 关键修复:不再在渲染时对整段超长文本做 escape+linkify 再塞进 DOM,
+            // 否则即便 <details> 折叠了,浏览器仍要解析几万字符的 DOM → 页面卡顿,
+            // 看起来就像「折叠没生效」。改为只渲染前 600 字预览,展开时再懒加载全文。
+            const FOLD_AT = 2000, PREVIEW = 600;
+            let textHtml;
+            if (m.text.length > FOLD_AT) {
+              const previewHtml = linkify(escapeHtml(m.text.slice(0, PREVIEW)));
+              const rest = m.text.length - PREVIEW;
+              textHtml =
+                '<details class="fold" data-i="' + i + '">' +
+                  '<summary class="fold-bar">' +
+                    '<span class="fold-tag">长文</span>' +
+                    '<span class="fold-label">展开全部 <b>' + m.text.length.toLocaleString() + '</b> 字</span>' +
+                    '<span class="fold-hint">（预览 ' + PREVIEW + ' 字 · 剩余 ' + rest.toLocaleString() + ' 字 · 点「复制」可直接拿走全文）</span>' +
+                  '</summary>' +
+                  '<div class="fold-preview">' + previewHtml + '</div>' +
+                  '<div class="fold-full" data-loaded="0"></div>' +
+                '</details>';
+            } else {
+              textHtml = '<div class="msg-text">' + linkify(escapeHtml(m.text)) + '</div>';
+            }
             return (
               '<li class="message">' +
                 '<div class="avatar" style="background:' + escapeHtml(m.color || '#888') + '"></div>' +
@@ -607,6 +688,22 @@
         }
         setTimeout(function () { t.textContent = '复制'; }, 1200);
       });
+
+      // 折叠区懒加载:点开时才把全文 escape+linkify 注入 DOM。
+      // 用 capture 捕获 —— toggle 事件在老浏览器不冒泡,捕获阶段兜底。
+      document.getElementById('list').addEventListener('toggle', function (e) {
+        const dt = e.target;
+        if (!dt || !dt.classList || !dt.classList.contains('fold')) return;
+        if (!dt.open) return;                       // 收起时不处理
+        const full = dt.querySelector('.fold-full');
+        if (full && full.getAttribute('data-loaded') === '0') {
+          const m = currentMessages[+dt.getAttribute('data-i')];
+          if (m) {
+            full.innerHTML = '<div class="msg-text">' + linkify(escapeHtml(m.text)) + '</div>';
+            full.setAttribute('data-loaded', '1');
+          }
+        }
+      }, true);
 
       // 点击房间名 → 换房 / 开新房
       document.getElementById('room-chip').onclick = function () {

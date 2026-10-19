@@ -15,6 +15,7 @@ const MAX = 50;                        // 每房间保留条数
 const MAX_TEXT = 100000;               // 单条文本最长字符（约一个完整源文件）
 const MAX_FIELD = 64;                  // name/color 字段最长
 const TOTAL_LIMIT = 4 * 1024 * 1024;   // 单房间总长护栏（KV value 上限 25MB，留足余量）
+const EDGE_TTL = 10;                   // GET 结果的边缘缓存秒数：显著加快「秒进」，POST 时主动失效
 
 function jsonResponse(obj, status, extraHeaders = {}) {
   return new Response(JSON.stringify(obj), {
@@ -59,14 +60,52 @@ async function readList(env, room) {
 }
 
 // ===== GET /api/messages =====
-export async function onRequestGet({ request, env }) {
+export async function onRequestGet({ request, env, context }) {
   if (!env.MESSAGES) return jsonResponse({ error: 'KV not bound' }, 500);
   if (!(await checkAuth(request, env))) return jsonResponse({ error: 'unauthorized' }, 401);
 
   const url = new URL(request.url);
   const room = getRoomName(url.searchParams.get('room'));
+
+  // 边缘缓存：同一房间 10 秒内的重复 GET 直接回本节点缓存，不打 KV。
+  // 注意必须放在 checkAuth 之后——绝不能把留言数据回给未登录请求。
+  // 缓存内容是「房间级」数据（和哪个用户无关），按 URL 缓存是安全的。
+  const cacheKey = new Request(url.origin + '/__edge/messages?room=' + room, { method: 'GET' });
+  try {
+    const hit = await caches.default.match(cacheKey);
+    if (hit) {
+      const body = await hit.text();
+      return new Response(body, {
+        headers: {
+          'Content-Type': 'application/json',
+          // 给浏览器的响应保持 no-store：防止「发完消息 → 重拉列表」命中浏览器缓存看不到新留言
+          'Cache-Control': 'no-store',
+        },
+      });
+    }
+  } catch (e) { /* 缓存层出任何问题都退回直读 KV */ }
+
   const list = await readList(env, room);
-  return jsonResponse({ room: room, messages: list });
+  const payload = JSON.stringify({ room: room, messages: list });
+
+  // 存进边缘缓存的副本带短 TTL；返回给浏览器的那份是 no-store
+  const cacheRes = new Response(payload, {
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'public, max-age=' + EDGE_TTL,
+    },
+  });
+  try {
+    if (context && typeof context.waitUntil === 'function') {
+      context.waitUntil(caches.default.put(cacheKey, cacheRes));
+    } else {
+      await caches.default.put(cacheKey, cacheRes);
+    }
+  } catch (e) { /* 缓存失败不影响本次响应 */ }
+
+  return new Response(payload, {
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+  });
 }
 
 // ===== POST /api/messages =====
@@ -110,6 +149,12 @@ export async function onRequestPost({ request, env }) {
     json = JSON.stringify(trimmed);
   }
   await env.MESSAGES.put('messages:' + room, json, { expirationTtl: ROOM_TTL });
+
+  // 有新留言：立刻失效该房间的边缘缓存，下一次 GET（包括刷新页面）拿到的是新数据
+  try {
+    const origin = new URL(request.url).origin;
+    await caches.default.delete(new Request(origin + '/__edge/messages?room=' + room, { method: 'GET' }));
+  } catch (e) { /* 失效失败也只是多等 10 秒 TTL */ }
 
   return jsonResponse({ ok: true, message: msg });
 }

@@ -1,0 +1,10 @@
+# Cloudflare Pages 静态资源缓存规则
+# 字体文件内容永不变化（文件名即指纹），缓存 1 年 + immutable
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# 字体声明表偶尔会随字体文件更新，缓存 1 天即可
+/fonts.css
+  Cache-Control: public, max-age=86400
+
+# HTML 保持默认（带 etag 协商缓存），保证每次部署后其他设备立刻拿到新版

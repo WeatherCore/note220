@@ -474,8 +474,11 @@
       box-shadow: 0 0 0 3px var(--ring);
     }
 
-    /* 折叠长内容:深色左色条 + 灰底卡片,一眼看出「这里有折叠」 */
-    details.fold {
+    /* 折叠长内容:深色左色条 + 灰底卡片,一眼看出「这里有折叠」。
+       卡片外观画在 .fold-box 上;<details> 只负责折叠条与全文,
+       预览是它的兄弟节点 —— 收起态的 <details> 会隐藏非 summary 子元素,
+       预览放 details 里面的话,收起时根本不渲染(旧版「只见展开、不见预览」的根因) */
+    .fold-box {
       margin-top: 4px;
       border: 1px solid var(--border-strong);
       border-left: 3px solid var(--fg);   /* 左侧深墨黑色条,主色强对比 */
@@ -546,8 +549,8 @@
       background: linear-gradient(to bottom, transparent, #F5F5F4);
       pointer-events: none;
     }
-    /* 展开后:隐藏预览,只显示全文(全文懒加载注入) */
-    details.fold[open] > .fold-preview { display: none; }
+    /* 展开后:隐藏兄弟节点上的预览,只显示全文(全文懒加载注入) */
+    details.fold[open] + .fold-preview { display: none; }
     .fold-full { padding: 8px 12px 10px; }
     .fold-full:empty { display: none; }
 
@@ -781,16 +784,21 @@
                 const hint = byLines
                   ? '（预览 ' + PREVIEW_LINES + ' 行 · 剩余 ' + (lineCount - PREVIEW_LINES).toLocaleString() + ' 行 · 点「复制」可直接拿走全文）'
                   : '（预览 ' + previewText.length.toLocaleString() + ' 字 · 剩余 ' + (m.text.length - previewText.length).toLocaleString() + ' 字 · 点「复制」可直接拿走全文）';
+                // 结构:.fold-preview 放在 <details> 外面做兄弟节点 ——
+                // 收起态的 details 隐藏非 summary 子元素,预览放里面收起时不可见;
+                // 展开态由 details.fold[open] + .fold-preview 把预览藏掉
                 textHtml =
-                  '<details class="fold" data-i="' + i + '">' +
-                    '<summary class="fold-bar">' +
-                      '<span class="fold-tag">长文</span>' +
-                      '<span class="fold-label">' + label + '</span>' +
-                      '<span class="fold-hint">' + hint + '</span>' +
-                    '</summary>' +
+                  '<div class="fold-box">' +
+                    '<details class="fold" data-i="' + i + '">' +
+                      '<summary class="fold-bar">' +
+                        '<span class="fold-tag">长文</span>' +
+                        '<span class="fold-label">' + label + '</span>' +
+                        '<span class="fold-hint">' + hint + '</span>' +
+                      '</summary>' +
+                      '<div class="fold-full" data-loaded="0"></div>' +
+                    '</details>' +
                     '<div class="fold-preview">' + previewHtml + '</div>' +
-                    '<div class="fold-full" data-loaded="0"></div>' +
-                  '</details>';
+                  '</div>';
               } else {
                 textHtml = '<div class="msg-text">' + linkify(escapeHtml(m.text)) + '</div>';
               }
@@ -843,7 +851,7 @@
               '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>' +
             '</button>' +
             '<textarea id="msg-input" placeholder="传点东西…（文字/代码/链接/图片，文字单条上限 10 万字）" maxlength="100000"></textarea>' +
-            '<button id="msg-btn">发</button>' +
+            '<button id="msg-btn">发送</button>' +
             '<input type="file" id="img-input" accept="image/*" hidden>' +
           '</div>' +
           '<div id="attach-strip" class="attach-strip" hidden>' +
@@ -851,7 +859,7 @@
             '<div class="attach-meta"><span id="attach-name" class="attach-name"></span><span id="attach-info"></span></div>' +
             '<button id="attach-remove" class="attach-remove" type="button">移除</button>' +
           '</div>' +
-          '<div class="composer-hint">Ctrl/⌘ + Enter 发送 · 🖼 插图自动压缩 · 大段内容会折叠，对方点「复制」一键拿走</div>' +
+          '<div class="composer-hint">Ctrl + Enter 发送 · 🖼 插图自动压缩 · 大段内容会折叠，点击「复制」一键拿走</div>' +
           '<div id="list">' + listHtml + '</div>' +
         '</div>';
 

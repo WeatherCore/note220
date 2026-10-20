@@ -3,7 +3,9 @@
 //
 // 数据模型（每个房间一个 key）：
 //   key   = 'messages:<房间名>'（房间名仅允许 1-32 位字母/数字/ - / _，防野 key）
-//   value = JSON 数组，[ {id, text, name, color, ts}, ... ]，最新在前
+//   value = JSON 数组，[ {id, text, name, color, ts, img?, mime?, w?, h?}, ... ]，最新在前
+// 可选图片字段：img = 32 位 hex id（本体存 KV 'img:<id>'，走 /api/img 通道），
+// 只存百字节级元数据，绝不把图片塞进消息 JSON（否则进房间一次拉十几 MB）。
 // 写入带 3 天滑动 TTL：房间 3 天没人发言就整个自动清空，活跃房间每次发言续期。
 //
 // 鉴权：cookie 里的 sid 是随机会话 id（由 /api/auth 签发），
@@ -124,7 +126,19 @@ export async function onRequestPost({ request, env }) {
   const text = (body && typeof body.text === 'string' ? body.text : '').slice(0, MAX_TEXT).trim();
   const name = (body && typeof body.name === 'string' ? body.name : '').slice(0, MAX_FIELD).trim();
   const color = (body && typeof body.color === 'string' ? body.color : '').slice(0, MAX_FIELD);
-  if (!text) return jsonResponse({ error: 'empty text' }, 400);
+
+  // 图片元数据（可选）：img 必须是 /api/img 签发的 32 位 hex id。
+  // mime 只接受白名单；w/h 是缩略图占位尺寸，防布局跳动用，限个安全范围。
+  const imgId = body && typeof body.img === 'string' ? body.img : '';
+  if (imgId && !/^[a-f0-9]{32}$/.test(imgId)) return jsonResponse({ error: 'bad img id' }, 400);
+  const IMG_MIMES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  const mime = body && typeof body.mime === 'string' && IMG_MIMES.indexOf(body.mime) !== -1 ? body.mime : '';
+  const w = body && Number.isInteger(body.w) ? Math.min(Math.max(body.w, 0), 10000) : 0;
+  const h = body && Number.isInteger(body.h) ? Math.min(Math.max(body.h, 0), 10000) : 0;
+
+  // 有图可无文字，有字可无图，但两者都不能空
+  if (!text && !imgId) return jsonResponse({ error: 'empty text' }, 400);
+  if (imgId && !mime) return jsonResponse({ error: 'bad img mime' }, 400);
 
   const list = await readList(env, room);
   const msg = {
@@ -134,6 +148,12 @@ export async function onRequestPost({ request, env }) {
     color,
     ts: Math.floor(Date.now() / 1000),
   };
+  if (imgId) {
+    msg.img = imgId;
+    msg.mime = mime;
+    if (w) msg.w = w;
+    if (h) msg.h = h;
+  }
   list.unshift(msg);
 
   let trimmed = list.slice(0, MAX);

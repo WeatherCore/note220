@@ -756,25 +756,44 @@
             // 超长内容:折叠 + 预览 + 懒加载全文。
             // 关键修复:不再在渲染时对整段超长文本做 escape+linkify 再塞进 DOM,
             // 否则即便 <details> 折叠了,浏览器仍要解析几万字符的 DOM → 页面卡顿,
-            // 看起来就像「折叠没生效」。改为只渲染前 600 字预览,展开时再懒加载全文。
-            const FOLD_AT = 2000, PREVIEW = 600;
+            // 看起来就像「折叠没生效」。改为只渲染预览,展开时再懒加载全文。
+            // 折叠判断 = 行数优先 + 字符数兜底:
+            //   行数(逻辑行,按换行符切)超过 6 行 → 折叠,预览只露前 6 行,长代码(几乎都多行)一眼即收;
+            //   兜底:超过 2000 字符也折叠——压缩 JS / base64 / 超长 URL 一整行没有换行,
+            //   按行数只有 1 行,不兜底会糊满全屏。
+            const FOLD_LINES = 6, FOLD_AT = 2000, PREVIEW_LINES = 6, PREVIEW_CHARS = 600;
             const hasText = typeof m.text === 'string' && m.text.length > 0;
             let textHtml = '';
-            if (hasText && m.text.length > FOLD_AT) {
-              const previewHtml = linkify(escapeHtml(m.text.slice(0, PREVIEW)));
-              const rest = m.text.length - PREVIEW;
-              textHtml =
-                '<details class="fold" data-i="' + i + '">' +
-                  '<summary class="fold-bar">' +
-                    '<span class="fold-tag">长文</span>' +
-                    '<span class="fold-label">展开全部 <b>' + m.text.length.toLocaleString() + '</b> 字</span>' +
-                    '<span class="fold-hint">（预览 ' + PREVIEW + ' 字 · 剩余 ' + rest.toLocaleString() + ' 字 · 点「复制」可直接拿走全文）</span>' +
-                  '</summary>' +
-                  '<div class="fold-preview">' + previewHtml + '</div>' +
-                  '<div class="fold-full" data-loaded="0"></div>' +
-                '</details>';
-            } else if (hasText) {
-              textHtml = '<div class="msg-text">' + linkify(escapeHtml(m.text)) + '</div>';
+            if (hasText) {
+              // 统一 \r\n / \r 为 \n(Windows 剪贴板是 \r\n),去掉结尾空行后按 \n 切逻辑行
+              const lines = m.text.replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n');
+              const lineCount = lines.length;
+              const byLines = lineCount > FOLD_LINES;   // 7 行起折叠:正好 6 行折了也只露 6 行,折叠条没有意义
+              const byChars = m.text.length > FOLD_AT;
+              if (byLines || byChars) {
+                // 预览 = 前 6 个逻辑行,再统一限 600 字:拦住「单行 3 万字符」把预览 DOM 撑大
+                const previewText = lines.slice(0, PREVIEW_LINES).join('\n').slice(0, PREVIEW_CHARS);
+                const previewHtml = linkify(escapeHtml(previewText));
+                // 文案跟触发条件走:行数触发按行展示,兜底触发按字展示(与旧版一致)
+                const label = byLines
+                  ? '展开全部（共 <b>' + lineCount.toLocaleString() + '</b> 行）'
+                  : '展开全部 <b>' + m.text.length.toLocaleString() + '</b> 字';
+                const hint = byLines
+                  ? '（预览 ' + PREVIEW_LINES + ' 行 · 剩余 ' + (lineCount - PREVIEW_LINES).toLocaleString() + ' 行 · 点「复制」可直接拿走全文）'
+                  : '（预览 ' + previewText.length.toLocaleString() + ' 字 · 剩余 ' + (m.text.length - previewText.length).toLocaleString() + ' 字 · 点「复制」可直接拿走全文）';
+                textHtml =
+                  '<details class="fold" data-i="' + i + '">' +
+                    '<summary class="fold-bar">' +
+                      '<span class="fold-tag">长文</span>' +
+                      '<span class="fold-label">' + label + '</span>' +
+                      '<span class="fold-hint">' + hint + '</span>' +
+                    '</summary>' +
+                    '<div class="fold-preview">' + previewHtml + '</div>' +
+                    '<div class="fold-full" data-loaded="0"></div>' +
+                  '</details>';
+              } else {
+                textHtml = '<div class="msg-text">' + linkify(escapeHtml(m.text)) + '</div>';
+              }
             }
             // 图片部分(可无):懒加载缩略图,本体走 /api/img 独立通道;
             // width/height 属性让浏览器提前占位,加载不跳版
@@ -919,6 +938,33 @@
         imgBtn.disabled = false;
       };
       document.getElementById('attach-remove').onclick = function () { setPendingImg(null); };
+
+      // Ctrl/⌘+V 粘贴图片:浏览器默认把粘贴进 textarea 的图片直接丢弃(textarea 只收文字),
+      // 所以要自己拦 paste 事件,从 clipboardData.items 里抠出位图文件挂到待发区。
+      // 只在剪贴板里真有图片时才 preventDefault,纯文字/图文混排的文字部分走默认粘贴。
+      ta.addEventListener('paste', async function (e) {
+        const items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+        let file = null;
+        for (const it of items) {
+          if (it.kind === 'file' && it.type.indexOf('image/') === 0) {
+            file = it.getAsFile();
+            break;
+          }
+        }
+        if (!file) return;
+        e.preventDefault();
+        imgBtn.disabled = true;
+        try {
+          const p = await prepareImage(file);
+          p.name = '剪贴板图片';                 // 截图/复制的图没有有意义的文件名
+          p.url = URL.createObjectURL(p.blob);
+          setPendingImg(p);
+        } catch (err) {
+          alert(err.message || '图片处理失败');
+        }
+        imgBtn.disabled = false;
+      });
 
       async function post() {
         const text = ta.value.trim();

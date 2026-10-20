@@ -279,6 +279,95 @@
       margin: 0 0 24px;
       line-height: 1.55;
     }
+    .composer { align-items: flex-end; }  /* 覆盖 stretch:插图后按钮沉底对齐 */
+    .composer-col {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .composer .composer-img-btn {
+      /* 幽灵方块按钮:优先级压过 .composer button 的深墨 CTA 样式 */
+      width: 44px;
+      flex-shrink: 0;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      color: var(--muted-2);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      cursor: pointer;
+      min-height: 44px;
+      transition: background var(--t-fast) ease, color var(--t-fast) ease, border-color var(--t-fast) ease;
+    }
+    .composer .composer-img-btn:hover {
+      background: #F5F5F4;
+      color: var(--fg);
+      border-color: var(--fg);
+    }
+    .composer .composer-img-btn:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--ring);
+    }
+    .composer .composer-img-btn:disabled {
+      background: transparent;
+      color: var(--border-strong);
+      border-color: var(--border);
+      cursor: wait;
+    }
+    .attach-strip {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 8px;
+      margin-bottom: 6px;
+      background: var(--card);
+      border: 1px dashed var(--border-strong);
+      border-radius: var(--radius);
+    }
+    .attach-thumb {
+      width: 40px;
+      height: 40px;
+      object-fit: cover;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .attach-meta {
+      flex: 1;
+      min-width: 0;
+      font-size: 11px;
+      color: var(--muted-2);
+      line-height: 1.5;
+    }
+    .attach-name {
+      display: block;
+      font-weight: 500;
+      color: var(--fg);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .attach-remove {
+      padding: 4px 10px;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      background: transparent;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      color: var(--muted-2);
+      cursor: pointer;
+      flex-shrink: 0;
+      min-height: 24px;
+      transition: color var(--t-fast) ease, border-color var(--t-fast) ease;
+    }
+    .attach-remove:hover { color: var(--danger); border-color: var(--danger); }
+    .attach-remove:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--ring);
+    }
 
     /* ===== 留言列表 ===== */
     .messages { list-style: none; padding: 0; margin: 0; }
@@ -367,6 +456,25 @@
       outline: none;
       box-shadow: 0 0 0 3px var(--ring);
       border-radius: 2px;
+    }
+
+    /* ===== 图片消息 ===== */
+    .msg-imgbox { margin-top: 8px; }
+    .msg-img {
+      display: block;
+      max-width: min(100%, 480px);
+      max-height: 320px;
+      height: auto;                    /* 配合 width/height 属性保比例,防布局跳动 */
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      background: #F5F5F4;             /* 加载中 / 透明图的衬底 */
+      cursor: zoom-in;                 /* 暗示可点开看大图 */
+      transition: border-color var(--t-fast) ease;
+    }
+    .msg-img:hover { border-color: var(--fg); }
+    .msg-img:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--ring);
     }
 
     /* 折叠长内容:深色左色条 + 灰底卡片,一眼看出「这里有折叠」 */
@@ -462,6 +570,60 @@
       padding: 0 5px;
       border-radius: 2px;
       letter-spacing: 0.05em;
+    }
+
+    /* ===== 图片 lightbox 全屏预览 ===== */
+    .lightbox {
+      position: fixed;
+      inset: 0;
+      z-index: 999;
+      display: none;
+      flex-direction: column;
+      background: rgba(28, 25, 23, 0.92);   /* 深墨黑遮罩,与主色同源 */
+    }
+    .lightbox.open { display: flex; }
+    .lb-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      font-size: 12px;
+    }
+    .lb-name {
+      font-family: var(--font-mono);
+      color: rgba(250, 250, 249, 0.75);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .lb-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .lb-btn {
+      padding: 8px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      font-family: var(--font-sans);
+      background: transparent;
+      color: #FAFAF9;
+      border: 1px solid rgba(250, 250, 249, 0.35);
+      border-radius: var(--radius);
+      cursor: pointer;
+      text-decoration: none;
+      min-height: 32px;
+      line-height: 1.2;
+      transition: background var(--t-fast) ease, border-color var(--t-fast) ease;
+    }
+    .lb-btn:hover { background: rgba(250, 250, 249, 0.12); border-color: #FAFAF9; }
+    .lb-btn:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(250, 250, 249, 0.3);
+    }
+    .lb-img {
+      display: block;
+      margin: 0 auto 16px;
+      max-width: calc(100vw - 32px);
+      max-height: calc(100vh - 76px);
+      object-fit: contain;
     }
 
     /* ===== reduced-motion 兜底(原来完全缺失) ===== */
@@ -599,8 +761,9 @@
             // 否则即便 <details> 折叠了,浏览器仍要解析几万字符的 DOM → 页面卡顿,
             // 看起来就像「折叠没生效」。改为只渲染前 600 字预览,展开时再懒加载全文。
             const FOLD_AT = 2000, PREVIEW = 600;
-            let textHtml;
-            if (m.text.length > FOLD_AT) {
+            const hasText = typeof m.text === 'string' && m.text.length > 0;
+            let textHtml = '';
+            if (hasText && m.text.length > FOLD_AT) {
               const previewHtml = linkify(escapeHtml(m.text.slice(0, PREVIEW)));
               const rest = m.text.length - PREVIEW;
               textHtml =
@@ -613,8 +776,20 @@
                   '<div class="fold-preview">' + previewHtml + '</div>' +
                   '<div class="fold-full" data-loaded="0"></div>' +
                 '</details>';
-            } else {
+            } else if (hasText) {
               textHtml = '<div class="msg-text">' + linkify(escapeHtml(m.text)) + '</div>';
+            }
+            // 图片部分(可无):懒加载缩略图,本体走 /api/img 独立通道;
+            // width/height 属性让浏览器提前占位,加载不跳版
+            let imgHtml = '';
+            if (m.img) {
+              imgHtml =
+                '<div class="msg-imgbox">' +
+                  '<img class="msg-img" loading="lazy" decoding="async" alt="图片" ' +
+                    'src="/api/img?id=' + encodeURIComponent(m.img) + '" ' +
+                    (m.w && m.h ? 'width="' + m.w + '" height="' + m.h + '" ' : '') +
+                    'data-i="' + i + '">' +
+                '</div>';
             }
             return (
               '<li class="message">' +
@@ -624,9 +799,10 @@
                     '<span class="msg-author">' + escapeHtml(author) + '</span>' +
                     (isSelf ? '<span class="self-badge">你</span>' : '') +
                     '<span>' + escapeHtml(relTime(m.ts)) + '</span>' +
-                    '<button class="copy-btn" data-i="' + i + '">复制</button>' +
+                    (hasText ? '<button class="copy-btn" data-i="' + i + '">复制</button>' : '') +
                   '</div>' +
                   textHtml +
+                  imgHtml +
                 '</div>' +
               '</li>'
             );
@@ -647,21 +823,130 @@
             '3 天没人发言本房间自动清空' +
           '</p>' +
           '<div class="composer">' +
-            '<textarea id="msg-input" placeholder="传点东西…（文字/代码/链接，单条上限 10 万字）" maxlength="100000"></textarea>' +
+            '<button id="img-btn" class="composer-img-btn" type="button" title="插入图片（自动压缩）" aria-label="插入图片">' +
+              '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>' +
+            '</button>' +
+            '<div class="composer-col">' +
+              '<div id="attach-strip" class="attach-strip" hidden>' +
+                '<img id="attach-thumb" class="attach-thumb" alt="待发送图片">' +
+                '<div class="attach-meta"><span id="attach-name" class="attach-name"></span><span id="attach-info"></span></div>' +
+                '<button id="attach-remove" class="attach-remove" type="button">移除</button>' +
+              '</div>' +
+              '<textarea id="msg-input" placeholder="传点东西…（文字/代码/链接/图片，文字单条上限 10 万字）" maxlength="100000"></textarea>' +
+            '</div>' +
             '<button id="msg-btn">发</button>' +
+            '<input type="file" id="img-input" accept="image/*" hidden>' +
           '</div>' +
-          '<div class="composer-hint">Ctrl/⌘ + Enter 发送 · 大段内容会折叠，对方点「复制」一键拿走</div>' +
+          '<div class="composer-hint">Ctrl/⌘ + Enter 发送 · 🖼 插图自动压缩 · 大段内容会折叠，对方点「复制」一键拿走</div>' +
           '<div id="list">' + listHtml + '</div>' +
         '</div>';
 
       const ta = document.getElementById('msg-input');
       const btn = document.getElementById('msg-btn');
 
+      // ===== 图片发布:选图 → 压缩 → 挂在待发区 → 先传图再发消息 =====
+      let pendingImg = null;   // { blob, mime, w, h, name, url }
+      const imgBtn = document.getElementById('img-btn');
+      const imgInput = document.getElementById('img-input');
+      const strip = document.getElementById('attach-strip');
+
+      function fmtSize(n) {
+        return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+      }
+
+      function setPendingImg(p) {
+        if (pendingImg && pendingImg.url) URL.revokeObjectURL(pendingImg.url);
+        pendingImg = p;
+        if (p) {
+          document.getElementById('attach-thumb').src = p.url;
+          document.getElementById('attach-name').textContent = p.name || '图片';
+          document.getElementById('attach-info').textContent =
+            p.w + '×' + p.h + ' · ' + fmtSize(p.blob.size) + '（已压缩）';
+          strip.hidden = false;
+        } else {
+          strip.hidden = true;
+          imgInput.value = '';
+        }
+      }
+
+      function readDims(file) {
+        return new Promise(function (resolve, reject) {
+          const url = URL.createObjectURL(file);
+          const im = new Image();
+          im.onload = function () { resolve({ w: im.naturalWidth, h: im.naturalHeight }); URL.revokeObjectURL(url); };
+          im.onerror = function () { URL.revokeObjectURL(url); reject(new Error('这张图浏览器解不开')); };
+          im.src = url;
+        });
+      }
+
+      async function prepareImage(file) {
+        var MAX_BYTES = 2.5 * 1024 * 1024;
+        // GIF 动图不压缩(canvas 会丢帧),原样直传,超限只能换小的
+        if (file.type === 'image/gif') {
+          if (file.size > MAX_BYTES) throw new Error('GIF 超过 2.5MB，换张小的吧');
+          const dim = await readDims(file);
+          return { blob: file, mime: 'image/gif', w: dim.w, h: dim.h, name: file.name };
+        }
+        // imageOrientation: from-image —— 按 EXIF 摆正方向(手机竖拍必开)
+        const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }).catch(function () { return null; });
+        if (!bmp) throw new Error('这张图浏览器解不开（可能是不支持的格式，如 HEIC）');
+        var MAXSIDE = 1920;
+        const scale = Math.min(1, MAXSIDE / Math.max(bmp.width, bmp.height));
+        const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(bmp, 0, 0, w, h);
+        if (bmp.close) bmp.close();
+        // 优先 WebP(体积最小、支持透明);环境不支持编码 WebP 时退 JPEG
+        let blob = await new Promise(function (res) { canvas.toBlob(res, 'image/webp', 0.82); });
+        let mime = 'image/webp';
+        if (!blob || (blob.type && blob.type !== 'image/webp')) {
+          blob = await new Promise(function (res) { canvas.toBlob(res, 'image/jpeg', 0.85); });
+          mime = 'image/jpeg';
+        }
+        if (!blob) throw new Error('图片压缩失败');
+        return { blob: blob, mime: mime, w: w, h: h, name: file.name };
+      }
+
+      imgBtn.onclick = function () { imgInput.click(); };
+      imgInput.onchange = async function () {
+        const f = imgInput.files && imgInput.files[0];
+        if (!f) return;
+        imgBtn.disabled = true;
+        try {
+          const p = await prepareImage(f);
+          p.url = URL.createObjectURL(p.blob);
+          setPendingImg(p);
+        } catch (e) {
+          alert(e.message || '图片处理失败');
+          imgInput.value = '';
+        }
+        imgBtn.disabled = false;
+      };
+      document.getElementById('attach-remove').onclick = function () { setPendingImg(null); };
+
       async function post() {
         const text = ta.value.trim();
-        if (!text) return;
+        if (!text && !pendingImg) return;
         btn.disabled = true; btn.textContent = '…';
         try {
+          // 两步走:先传图拿 id,再发消息(消息 JSON 只挂百字节元数据,不塞图片本体)
+          let imgFields = {};
+          if (pendingImg) {
+            const up = await fetch('/api/img', {
+              method: 'POST',
+              headers: { 'Content-Type': pendingImg.mime },
+              body: pendingImg.blob,
+            });
+            if (up.status === 401) { renderAuth(); return; }  // 会话过期,回门口重新输令牌
+            if (!up.ok) {
+              btn.disabled = false; btn.textContent = '发';
+              alert('图片上传失败 (HTTP ' + up.status + ')' + (up.status === 413 ? '，图片太大' : ''));
+              return;
+            }
+            const j = await up.json();
+            imgFields = { img: j.id, mime: pendingImg.mime, w: pendingImg.w, h: pendingImg.h };
+          }
           const r = await fetch('/api/messages', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -670,11 +955,13 @@
               text: text,
               name: self.name,
               color: self.color,
+              ...imgFields,
             }),
           });
           btn.disabled = false; btn.textContent = '发';
           if (r.ok) {
             ta.value = '';
+            setPendingImg(null);
             await loadBoard();
             ta.focus();
           } else if (r.status === 401) {
@@ -692,10 +979,16 @@
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); post(); }
       };
 
-      // 每条消息的「复制」按钮（事件委托，一次绑定管整个列表）
+      // 每条消息的「复制」按钮 + 图片点开大图（事件委托，一次绑定管整个列表）
       document.getElementById('list').addEventListener('click', async function (e) {
         const t = e.target;
-        if (!t.classList || !t.classList.contains('copy-btn')) return;
+        if (!t.classList) return;
+        if (t.classList.contains('msg-img')) {
+          const m = currentMessages[+t.getAttribute('data-i')];
+          if (m && m.img) openLightbox(m);
+          return;
+        }
+        if (!t.classList.contains('copy-btn')) return;
         const m = currentMessages[+t.getAttribute('data-i')];
         if (!m) return;
         try {
@@ -751,6 +1044,41 @@
         }
         setTimeout(function () { that.textContent = '复制链接'; }, 1200);
       };
+
+      // ===== 图片全屏预览(lightbox):点缩略图进来,可下载原图 =====
+      // lightbox 挂在 body 上(不在 #root 里),renderBoard 重渲染不会弄丢它
+      function openLightbox(m) {
+        let lb = document.getElementById('lightbox');
+        if (!lb) {
+          lb = document.createElement('div');
+          lb.id = 'lightbox';
+          lb.className = 'lightbox';
+          lb.innerHTML =
+            '<div class="lb-bar">' +
+              '<span class="lb-name"></span>' +
+              '<span class="lb-actions">' +
+                '<a id="lb-dl" class="lb-btn" href="#">下载</a>' +
+                '<button id="lb-close" class="lb-btn" type="button">关闭</button>' +
+              '</span>' +
+            '</div>' +
+            '<img class="lb-img" alt="图片预览">';
+          document.body.appendChild(lb);
+          lb.addEventListener('click', function (e) {
+            if (e.target === lb) lb.classList.remove('open');   // 点遮罩空白处关闭
+          });
+          document.getElementById('lb-close').onclick = function () { lb.classList.remove('open'); };
+          document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') lb.classList.remove('open');
+          });
+        }
+        const src = '/api/img?id=' + encodeURIComponent(m.img);
+        lb.querySelector('.lb-img').src = src;
+        // 下载 = 同一张图带 ?dl=1,服务端回 attachment 头,浏览器直接存盘
+        document.getElementById('lb-dl').href = src + '&dl=1';
+        lb.querySelector('.lb-name').textContent =
+          '@ ' + (m.name || 'unknown') + (m.w && m.h ? ' · ' + m.w + '×' + m.h : '');
+        lb.classList.add('open');
+      }
 
       // 用完退出：吊销会话 + 清 cookie，回门口
       document.getElementById('logout-btn').onclick = async function () {

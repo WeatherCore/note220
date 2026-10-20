@@ -4,7 +4,7 @@
   "description": "寝室自用留言板，部署在 Cloudflare Pages + KV",
   "private": true,
   "scripts": {
-    "dev": "wrangler pages dev ./public --kv MESSAGES --var ROOM_TOKEN:devtoken",
+    "dev": "wrangler pages dev ./public --kv MESSAGES -b ROOM_TOKEN=devtoken",
     "deploy": "wrangler pages deploy ./public"
   },
   "devDependencies": {

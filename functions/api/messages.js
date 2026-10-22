@@ -1,5 +1,6 @@
 // GET  /api/messages?room=xxx — 返回该房间最近 50 条
 // POST /api/messages — 追加一条新留言（unshift 到数组头，裁剪后写回 KV）
+// DELETE /api/messages?room=xxx&id=yyy — 撤回一条留言（全员可删，带图连本体一起清）
 //
 // 数据模型（每个房间一个 key）：
 //   key   = 'messages:<房间名>'（房间名仅允许 1-32 位字母/数字/ - / _，防野 key）
@@ -177,6 +178,50 @@ export async function onRequestPost({ request, env }) {
   } catch (e) { /* 失效失败也只是多等 10 秒 TTL */ }
 
   return jsonResponse({ ok: true, message: msg });
+}
+
+// ===== DELETE /api/messages?room=xxx&id=<32位hex> =====
+// 撤回消息，全员可删：房间是共用的，任何持有效会话的人都能删任何一条。
+// 实现 = 从数组里去掉该 id 后整体写回（与 POST 同样的读改写竞态窗口，
+// 极端并发下可能互相覆盖，对寝室场景可接受；迁 D1 后变成 DELETE WHERE id=?）。
+export async function onRequestDelete({ request, env, context }) {
+  if (!env.MESSAGES) return jsonResponse({ error: 'KV not bound' }, 500);
+  if (!(await checkAuth(request, env))) return jsonResponse({ error: 'unauthorized' }, 401);
+
+  const url = new URL(request.url);
+  const room = getRoomName(url.searchParams.get('room'));
+  const id = url.searchParams.get('id') || '';
+  // id 必须是 /api/messages 签发的 32 位 hex，与图片 id 同一套白名单
+  if (!/^[a-f0-9]{32}$/.test(id)) return jsonResponse({ error: 'bad id' }, 400);
+
+  const list = await readList(env, room);
+  const idx = list.findIndex(function (m) { return m && m.id === id; });
+  if (idx === -1) return jsonResponse({ error: 'not found' }, 404);
+  const removed = list.splice(idx, 1)[0];
+
+  // 带图消息：顺手删掉图片本体 key（否则它会孤悬到 30 天自然过期，白占存储）
+  // 清理失败不影响消息删除本身——残留 key 有 TTL 兜底
+  if (removed && removed.img) {
+    try {
+      const p = env.MESSAGES.delete('img:' + removed.img);
+      if (context && typeof context.waitUntil === 'function') {
+        context.waitUntil(p);
+      } else {
+        await p;
+      }
+    } catch (e) { /* 忽略 */ }
+  }
+
+  // 写回并滑动续期：删除也算房间活动，与 POST 口径一致
+  await env.MESSAGES.put('messages:' + room, JSON.stringify(list), { expirationTtl: ROOM_TTL });
+
+  // 与 POST 一致：立刻失效该房间的边缘缓存，其他人的下一次刷新拿到的是删后数据
+  try {
+    const origin = new URL(request.url).origin;
+    await caches.default.delete(new Request(origin + '/__edge/messages?room=' + room, { method: 'GET' }));
+  } catch (e) { /* 失效失败也只是多等 10 秒 TTL */ }
+
+  return jsonResponse({ ok: true });
 }
 
 // ===== OPTIONS（CORS 预检，给本地开发用） =====

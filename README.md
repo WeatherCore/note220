@@ -65,6 +65,7 @@ flowchart TB
 - 🔗 **多房间** — URL 带 `#r=房间名` 即独立房间，点房间名换房/开新房；固定名当留言板，随机名做一次性管道
 - 🔑 **免登录会话** — 输一次令牌拿 32 位 sid；默认 30 分钟过期（陌生电脑友好），勾「记住我」1 年免输，随时「退出」吊销
 - 🖼 **图片消息** — 插图按钮或 Ctrl/⌘+V 直接粘贴截图；前端自动压缩（最长边 1920px，WebP 优先，GIF 原样直传，按 EXIF 摆正方向）；服务端魔数嗅探；列表懒加载缩略图 + 点击全屏 Lightbox + 原图下载
+- 🗑 **消息撤回** — 每条消息一键删除，全员可删（房间共用，confirm 防误触）；带图消息连图片本体一起清；服务端同步失效边缘缓存
 - 📄 **大代码片段** — 单条上限 10 万字符（约一个完整源文件）；超 6 行或 2000 字自动折叠，预览露前 6 行，展开时才注入全文 DOM（防卡顿），「复制」一键拿走全文
 - ⚡ **秒进体验** — 首屏请求提前到 `<head>` 并行发起；GET 结果边缘缓存 10 秒、发消息后主动失效；IBM Plex Sans + JetBrains Mono 自托管，`font-display: swap` 渲染零阻塞
 - 🔥 **自动焚毁** — 房间 3 天没人发言整间清空（活跃房间每次发言续期），敏感内容不永久留底
@@ -177,6 +178,7 @@ sequenceDiagram
 | DELETE | `/api/auth` | — | 退出：吊销当前会话 + 清 cookie |
 | GET | `/api/messages?room=xxx` | cookie | 返回 `{room, messages[]}`（边缘缓存 10s，浏览器侧 no-store） |
 | POST | `/api/messages` | cookie | 追加一条，body `{room, text, name, color, img?, mime?, w?, h?}` |
+| DELETE | `/api/messages?room=xxx&id=yyy` | cookie | 撤回指定消息（全员可删），带图消息顺带清图片本体 |
 | POST | `/api/img` | cookie | 上传图片二进制（≤2.5MB，jpeg/png/webp/gif），返回 `{id, mime, size}` |
 | GET | `/api/img?id=xxx[&dl=1]` | cookie | 取图；`dl=1` 带 attachment 头触发下载；1 年 immutable 缓存 |
 
@@ -333,6 +335,7 @@ npx wrangler pages secret put ROOM_TOKEN --project-name note220
 - [x] 🖼 图片消息：粘贴上传、前端压缩、懒加载、全屏预览、原图下载
 - [x] ⚡ 秒进三件套：`<head>` 预取 + 边缘缓存 + 自托管字体
 - [x] 亮色 Swiss 视觉重写（stone 色板 + Plex/Mono，过 a11y 基线）
+- [x] 🗑 消息撤回（全员可删，带图连本体一起清）
 - [ ] Markdown 渲染（先 escape 再 markdown 再 linkify）
 - [ ] 两段式加载：列表只回预览 + 单条详情接口按需拉全文
 - [ ] KV 迁 D1：append 写顺带消灭并发丢消息窗口

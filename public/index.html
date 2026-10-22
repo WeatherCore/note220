@@ -402,9 +402,17 @@
       color: var(--fg);
       font-family: var(--font-mono);
     }
+    .msg-actions {
+      /* 动作按钮容器:吃掉 meta 行剩余空间,把按钮组统一推到右侧
+         (此前 margin-left:auto 写在 copy-btn 上,纯图消息没有右靠参照) */
+      margin-left: auto;
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+      align-items: center;
+    }
     .copy-btn {
       /* 修复:padding 1px 8px → 4px 10px,触摸目标 ~24×24 起 */
-      margin-left: auto;
       padding: 4px 10px;
       font-size: 11px;
       font-family: var(--font-sans);
@@ -427,6 +435,35 @@
     .copy-btn:focus-visible {
       outline: none;
       box-shadow: 0 0 0 3px var(--ring);
+    }
+    .del-btn {
+      /* 删除按钮:样式与复制按钮同构,hover 走 danger 红,提示破坏性 */
+      padding: 4px 10px;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      background: transparent;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      color: var(--muted-2);
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background var(--t-fast) ease, color var(--t-fast) ease, border-color var(--t-fast) ease;
+      min-height: 24px;
+      line-height: 1;
+    }
+    .del-btn:hover {
+      color: var(--danger);
+      border-color: var(--danger);
+      background: #FCEBEB;
+    }
+    .del-btn:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--ring);
+    }
+    .del-btn:disabled {
+      color: var(--muted);
+      border-color: var(--border);
+      cursor: not-allowed;
     }
 
     .msg-text {
@@ -819,12 +856,15 @@
               '<li class="message">' +
                 '<div class="avatar" style="background:' + escapeHtml(m.color || '#888') + '"></div>' +
                 '<div class="msg-body">' +
-                  '<div class="msg-meta">' +
-                    '<span class="msg-author">' + escapeHtml(author) + '</span>' +
-                    (isSelf ? '<span class="self-badge">你</span>' : '') +
-                    '<span>' + escapeHtml(relTime(m.ts)) + '</span>' +
+                '<div class="msg-meta">' +
+                  '<span class="msg-author">' + escapeHtml(author) + '</span>' +
+                  (isSelf ? '<span class="self-badge">你</span>' : '') +
+                  '<span>' + escapeHtml(relTime(m.ts)) + '</span>' +
+                  '<span class="msg-actions">' +
                     (hasText ? '<button class="copy-btn" data-i="' + i + '">复制</button>' : '') +
-                  '</div>' +
+                    '<button class="del-btn" data-i="' + i + '" title="删除（全员可删，不可恢复）">删</button>' +
+                  '</span>' +
+                '</div>' +
                   textHtml +
                   imgHtml +
                 '</div>' +
@@ -1035,6 +1075,28 @@
         if (t.classList.contains('msg-img')) {
           const m = currentMessages[+t.getAttribute('data-i')];
           if (m && m.img) openLightbox(m);
+          return;
+        }
+        if (t.classList.contains('del-btn')) {
+          // 撤回：全员可删。confirm 防误触——删除不可恢复，且其他人刷新后即消失。
+          const m = currentMessages[+t.getAttribute('data-i')];
+          if (!m) return;
+          if (!confirm('删除这条消息？（全员可删，不可恢复）')) return;
+          t.disabled = true;
+          try {
+            const r = await fetch('/api/messages?room=' + encodeURIComponent(getRoom()) + '&id=' + encodeURIComponent(m.id), { method: 'DELETE' });
+            if (r.status === 401) { renderAuth(); return; }  // 会话过期，回门口重新输令牌
+            if (r.ok || r.status === 404) {
+              // 404 = 已被别人抢先删掉，刷新列表对齐即可
+              await loadBoard();
+            } else {
+              t.disabled = false;
+              alert('删除失败 (HTTP ' + r.status + ')');
+            }
+          } catch (err) {
+            t.disabled = false;
+            alert('网络错误');
+          }
           return;
         }
         if (!t.classList.contains('copy-btn')) return;

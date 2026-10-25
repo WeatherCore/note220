@@ -496,9 +496,13 @@
     .msg-imgbox { margin-top: 8px; }
     .msg-img {
       display: block;
-      max-width: min(100%, 480px);
-      max-height: 320px;
+      max-width: 100%;
+      /* 自适应屏高:竖拍照片占约半屏,不再固定 320px 把手机照片拍成小缩略图;
+         dvh 更贴移动端可视高度,不支持的内核退回 vh */
+      max-height: min(60vh, 520px);
+      max-height: min(60dvh, 520px);
       height: auto;                    /* 配合 width/height 属性保比例,防布局跳动 */
+      object-fit: contain;             /* 兜底旧消息:万一盒子比例对不上,letterbox 而非拉伸 */
       border: 1px solid var(--border-strong);
       border-radius: var(--radius);
       background: #F5F5F4;             /* 加载中 / 透明图的衬底 */
@@ -509,6 +513,41 @@
     .msg-img:focus-visible {
       outline: none;
       box-shadow: 0 0 0 3px var(--ring);
+    }
+    /* 长图/全景(最长边 ≥ 2.5 倍短边):按原比例展示会被高度上限压成
+       几十像素宽的细缝,改固定尺寸裁切卡做预览,完整内容点 lightbox 看 */
+    .msg-imgcard {
+      position: relative;
+      width: min(240px, 100%);
+      height: 280px;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      background: #F5F5F4;
+      overflow: hidden;
+      cursor: zoom-in;
+      transition: border-color var(--t-fast) ease;
+    }
+    .msg-imgcard:hover { border-color: var(--fg); }
+    .msg-imgcard .msg-img {
+      width: 100%;
+      height: 100%;
+      max-width: none;                 /* 裁切交给卡片,img 只管撑满 */
+      max-height: none;
+      object-fit: cover;
+      border: none;
+    }
+    .msg-imgbadge {
+      position: absolute;
+      right: 6px;
+      bottom: 6px;
+      pointer-events: none;            /* 角标不挡点击,点击统一落到图片上 */
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      color: var(--on-accent);
+      background: rgba(28, 25, 23, 0.82);
+      padding: 1px 6px;
+      border-radius: 2px;
     }
 
     /* 折叠长内容:深色左色条 + 灰底卡片,一眼看出「这里有折叠」。
@@ -655,12 +694,30 @@
       outline: none;
       box-shadow: 0 0 0 3px rgba(250, 250, 249, 0.3);
     }
+    /* 舞台 = 滚动容器:1:1 模式下长截图可上下滑、大图可四向拖;
+       高度由 flex 撑满遮罩,不再用 100vh 硬算 —— 规避 iOS 工具栏遮挡 */
+    .lb-stage {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;    /* 滚到边界不连带背景页面 */
+      padding: 0 16px 16px;
+      padding: 0 16px max(16px, env(safe-area-inset-bottom));
+    }
     .lb-img {
       display: block;
-      margin: 0 auto 16px;
-      max-width: calc(100vw - 32px);
-      max-height: calc(100vh - 76px);
+      margin: 0 auto;
+      max-width: 100%;
+      max-height: 100%;                /* 适应模式:完整塞进舞台 */
       object-fit: contain;
+      cursor: zoom-in;
+    }
+    /* 1:1 模式:解除限制按原始像素展示,配合舞台滚动看细节 */
+    .lightbox.zoomed .lb-img {
+      max-width: none;
+      max-height: none;
+      cursor: zoom-out;
     }
 
     /* ===== reduced-motion 兜底(原来完全缺失) ===== */
@@ -840,17 +897,42 @@
                 textHtml = '<div class="msg-text">' + linkify(escapeHtml(m.text)) + '</div>';
               }
             }
-            // 图片部分(可无):懒加载缩略图,本体走 /api/img 独立通道;
-            // width/height 属性让浏览器提前占位,加载不跳版
+            // 图片部分(可无):懒加载,本体走 /api/img 独立通道;
+            // width/height 属性让浏览器提前占位,加载不跳版。
+            // 渲染时已知的 w/h 顺便用来分流展示:常规图自适应(占满消息栏宽,
+            // 高不超 60vh);长图/全景(最长边 ≥ 2.5 倍短边)转固定裁切卡 + 角标 ——
+            // 原比例展示会把 1:8 的长截图压成几十像素宽的细缝,没法看
             let imgHtml = '';
             if (m.img) {
-              imgHtml =
-                '<div class="msg-imgbox">' +
-                  '<img class="msg-img" loading="lazy" decoding="async" alt="图片" ' +
-                    'src="/api/img?id=' + encodeURIComponent(m.img) + '" ' +
-                    (m.w && m.h ? 'width="' + m.w + '" height="' + m.h + '" ' : '') +
-                    'data-i="' + i + '">' +
-                '</div>';
+              const isLongImg = !!(m.w && m.h) && Math.max(m.w, m.h) / Math.min(m.w, m.h) > 2.5;
+              const dimAttrs = m.w && m.h ? 'width="' + m.w + '" height="' + m.h + '" ' : '';
+              // 常规图的展示宽度用确定性数学:宽 = min(容器宽, 高度上限 × 宽高比),高由比例自动得出。
+              // 不能只靠 CSS 双上限 —— 实测 Chrome 对「width 属性 + height:auto + max-width/max-height」
+              // 会各自独立截断、不保比例,竖拍照片会被拉宽变形;先给 vh 再给 dvh 做降级
+              const fitStyle = m.w && m.h
+                ? ' style="width:min(100%,calc(min(60vh,520px)*' + (m.w / m.h).toFixed(4) + '));' +
+                  'width:min(100%,calc(min(60dvh,520px)*' + (m.w / m.h).toFixed(4) + '));"'
+                : '';
+              if (isLongImg) {
+                // 长图从顶部开始裁、全景从左侧开始裁,朝阅读起点对齐
+                const cropPos = m.h > m.w ? 'center top' : 'left center';
+                imgHtml =
+                  '<div class="msg-imgbox">' +
+                    '<div class="msg-imgcard" data-i="' + i + '">' +
+                      '<img class="msg-img" loading="lazy" decoding="async" alt="长图" ' +
+                        'src="/api/img?id=' + encodeURIComponent(m.img) + '" ' + dimAttrs +
+                        'style="object-position:' + cropPos + '" data-i="' + i + '">' +
+                      '<span class="msg-imgbadge">' + (m.h > m.w ? '长图' : '全景') + '</span>' +
+                    '</div>' +
+                  '</div>';
+              } else {
+                imgHtml =
+                  '<div class="msg-imgbox">' +
+                    '<img class="msg-img" loading="lazy" decoding="async" alt="图片" ' +
+                      'src="/api/img?id=' + encodeURIComponent(m.img) + '" ' + dimAttrs + fitStyle +
+                      'data-i="' + i + '">' +
+                  '</div>';
+              }
             }
             return (
               '<li class="message">' +
@@ -931,14 +1013,25 @@
         }
       }
 
-      function readDims(file) {
+      // <img> 解码兜底:老 WebView 没有 createImageBitmap、或个别格式位图解码失败时,
+      // 走 <img> 管线再画进 canvas(通用性最好);EXIF 方向由浏览器
+      // image-orientation 的默认值 from-image 处理,与现代内核行为一致
+      function decodeImage(file) {
         return new Promise(function (resolve, reject) {
           const url = URL.createObjectURL(file);
           const im = new Image();
-          im.onload = function () { resolve({ w: im.naturalWidth, h: im.naturalHeight }); URL.revokeObjectURL(url); };
-          im.onerror = function () { URL.revokeObjectURL(url); reject(new Error('这张图浏览器解不开')); };
+          im.onload = function () { URL.revokeObjectURL(url); resolve(im); };
+          im.onerror = function () { URL.revokeObjectURL(url); reject(new Error('unsupported')); };
           im.src = url;
         });
+      }
+
+      // 解不动的报错要能落地:HEIC(iPhone 相机「保留原片」格式)单独给解法
+      function unsupportedMsg(file) {
+        if (/image\/hei[cf]/i.test(file.type || '') || /\.hei[cf]$/i.test(file.name || '')) {
+          return 'HEIC 照片这个浏览器解不开：iPhone 请到 设置→相机→格式 选「兼容性最佳」，或先转成 JPEG 再发';
+        }
+        return '这张图浏览器解不开（可能是不支持的格式）';
       }
 
       async function prepareImage(file) {
@@ -946,19 +1039,27 @@
         // GIF 动图不压缩(canvas 会丢帧),原样直传,超限只能换小的
         if (file.type === 'image/gif') {
           if (file.size > MAX_BYTES) throw new Error('GIF 超过 2.5MB，换张小的吧');
-          const dim = await readDims(file);
-          return { blob: file, mime: 'image/gif', w: dim.w, h: dim.h, name: file.name };
+          const im = await decodeImage(file).catch(function () { throw new Error('这张图浏览器解不开'); });
+          return { blob: file, mime: 'image/gif', w: im.naturalWidth, h: im.naturalHeight, name: file.name };
         }
-        // imageOrientation: from-image —— 按 EXIF 摆正方向(手机竖拍必开)
-        const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }).catch(function () { return null; });
-        if (!bmp) throw new Error('这张图浏览器解不开（可能是不支持的格式，如 HEIC）');
+        // 解码优先 createImageBitmap(imageOrientation: from-image —— 按 EXIF 摆正方向,
+        // 手机竖拍必开);API 缺席或解不动时降级 <img> 管线,老 WebView 不再全军覆没
+        let drawable = null, srcW = 0, srcH = 0;
+        if (typeof createImageBitmap === 'function') {
+          drawable = await createImageBitmap(file, { imageOrientation: 'from-image' }).catch(function () { return null; });
+          if (drawable) { srcW = drawable.width; srcH = drawable.height; }
+        }
+        if (!drawable) {
+          drawable = await decodeImage(file).catch(function () { throw new Error(unsupportedMsg(file)); });
+          srcW = drawable.naturalWidth; srcH = drawable.naturalHeight;
+        }
         var MAXSIDE = 1920;
-        const scale = Math.min(1, MAXSIDE / Math.max(bmp.width, bmp.height));
-        const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
+        const scale = Math.min(1, MAXSIDE / Math.max(srcW, srcH));
+        const w = Math.round(srcW * scale), h = Math.round(srcH * scale);
         const canvas = document.createElement('canvas');
         canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(bmp, 0, 0, w, h);
-        if (bmp.close) bmp.close();
+        canvas.getContext('2d').drawImage(drawable, 0, 0, w, h);
+        if (drawable.close) drawable.close();   // ImageBitmap 有 close,Image 元素没有
         // 优先 WebP(体积最小、支持透明);环境不支持编码 WebP 时退 JPEG
         let blob = await new Promise(function (res) { canvas.toBlob(res, 'image/webp', 0.82); });
         let mime = 'image/webp';
@@ -1072,8 +1173,10 @@
       document.getElementById('list').addEventListener('click', async function (e) {
         const t = e.target;
         if (!t.classList) return;
-        if (t.classList.contains('msg-img')) {
-          const m = currentMessages[+t.getAttribute('data-i')];
+        if (t.classList.contains('msg-img') || t.classList.contains('msg-imgcard')) {
+          // 长图裁切卡:点击可能落在卡片容器上,统一从卡内 img 取 data-i
+          const im = t.classList.contains('msg-img') ? t : t.querySelector('.msg-img');
+          const m = currentMessages[+im.getAttribute('data-i')];
           if (m && m.img) openLightbox(m);
           return;
         }
@@ -1156,8 +1259,10 @@
         setTimeout(function () { that.textContent = '复制链接'; }, 1200);
       };
 
-      // ===== 图片全屏预览(lightbox):点缩略图进来,可下载原图 =====
-      // lightbox 挂在 body 上(不在 #root 里),renderBoard 重渲染不会弄丢它
+      // ===== 图片全屏预览(lightbox):点缩略图进来,可 1:1 看细节、可下载原图 =====
+      // lightbox 挂在 body 上(不在 #root 里),renderBoard 重渲染不会弄丢它。
+      // 图片放进可滚动舞台:适应模式完整看全貌;1:1 模式(点图片或「1:1」按钮切换)
+      // 按原始像素展示,长截图上下滑、大图四向拖 —— 细节靠这个看
       function openLightbox(m) {
         let lb = document.getElementById('lightbox');
         if (!lb) {
@@ -1168,26 +1273,53 @@
             '<div class="lb-bar">' +
               '<span class="lb-name"></span>' +
               '<span class="lb-actions">' +
+                '<button id="lb-zoom" class="lb-btn" type="button">1:1</button>' +
                 '<a id="lb-dl" class="lb-btn" href="#">下载</a>' +
                 '<button id="lb-close" class="lb-btn" type="button">关闭</button>' +
               '</span>' +
             '</div>' +
-            '<img class="lb-img" alt="图片预览">';
+            '<div class="lb-stage"><img class="lb-img" alt="图片预览"></div>';
           document.body.appendChild(lb);
-          lb.addEventListener('click', function (e) {
-            if (e.target === lb) lb.classList.remove('open');   // 点遮罩空白处关闭
+
+          const st = lb.querySelector('.lb-stage');
+          const zb = document.getElementById('lb-zoom');
+          const setZoom = function (on) {
+            lb.classList.toggle('zoomed', on);
+            zb.textContent = on ? '适应' : '1:1';
+            st.scrollTop = 0;
+            st.scrollLeft = 0;
+          };
+          const close = function () {
+            lb.classList.remove('open', 'zoomed');
+            zb.textContent = '1:1';
+            document.body.style.overflow = '';   // 解锁背景滚动
+          };
+          zb.onclick = function () { setZoom(!lb.classList.contains('zoomed')); };
+          lb.querySelector('.lb-img').addEventListener('click', function () {
+            setZoom(!lb.classList.contains('zoomed'));
           });
-          document.getElementById('lb-close').onclick = function () { lb.classList.remove('open'); };
+          document.getElementById('lb-close').onclick = close;
+          st.addEventListener('click', function (e) {
+            if (e.target === st) close();        // 点图片外的遮罩空白处关闭
+          });
           document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') lb.classList.remove('open');
+            if (e.key === 'Escape') close();
           });
         }
         const src = '/api/img?id=' + encodeURIComponent(m.img);
+        // 每次打开回到适应模式,上一张的 1:1 状态不串台
+        lb.classList.remove('zoomed');
+        document.getElementById('lb-zoom').textContent = '1:1';
+        const stage = lb.querySelector('.lb-stage');
+        stage.scrollTop = 0;
+        stage.scrollLeft = 0;
         lb.querySelector('.lb-img').src = src;
         // 下载 = 同一张图带 ?dl=1,服务端回 attachment 头,浏览器直接存盘
         document.getElementById('lb-dl').href = src + '&dl=1';
         lb.querySelector('.lb-name').textContent =
           '@ ' + (m.name || 'unknown') + (m.w && m.h ? ' · ' + m.w + '×' + m.h : '');
+        // 打开即锁背景滚动:触屏上 fixed 遮罩本身挡不住 touchmove 连带滚动
+        document.body.style.overflow = 'hidden';
         lb.classList.add('open');
       }
 

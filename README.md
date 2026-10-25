@@ -40,7 +40,7 @@
 ```mermaid
 flowchart TB
     subgraph B["浏览器 · 零框架单页（public/index.html）"]
-        UI["令牌门 / 留言板 / 图片压缩 / Lightbox"]
+        UI["令牌门 / 留言板 / 原图直传 / Lightbox"]
     end
     subgraph CF["Cloudflare Pages"]
         S["静态资源：HTML + 自托管字体 + _headers 缓存策略"]
@@ -64,7 +64,7 @@ flowchart TB
 
 - 🔗 **多房间** — URL 带 `#r=房间名` 即独立房间，点房间名换房/开新房；固定名当留言板，随机名做一次性管道
 - 🔑 **免登录会话** — 输一次令牌拿 32 位 sid；默认 30 分钟过期（陌生电脑友好），勾「记住我」1 年免输，随时「退出」吊销
-- 🖼 **图片消息** — 插图按钮或 Ctrl/⌘+V 直接粘贴截图；前端自动压缩（最长边 1920px，WebP 优先，GIF 原样直传，按 EXIF 摆正方向）；服务端魔数嗅探；列表自适应展示（手机竖拍占约半屏高，长图/全景自动转裁切卡 + 角标）+ 点击全屏 Lightbox（可 1:1 看细节）+ 原图下载
+- 🖼 **图片消息** — 插图按钮或 Ctrl/⌘+V 直接粘贴截图；**原图直传**（不压缩、不重编码，EXIF 方向由浏览器解码路径自动摆正，jpeg/png/webp/gif/avif，单图 ≤20MB）；服务端魔数嗅探；列表自适应展示（手机竖拍占约半屏高，长图/全景自动转裁切卡 + 角标）+ 点击全屏 Lightbox（可 1:1 看细节）+ 原图下载
 - 🗑 **消息撤回** — 每条消息一键删除，全员可删（房间共用，confirm 防误触）；带图消息连图片本体一起清；服务端同步失效边缘缓存
 - 📄 **大代码片段** — 单条上限 10 万字符（约一个完整源文件）；超 6 行或 2000 字自动折叠，预览露前 6 行，展开时才注入全文 DOM（防卡顿），「复制」一键拿走全文
 - ⚡ **秒进体验** — 首屏请求提前到 `<head>` 并行发起；GET 结果边缘缓存 10 秒、发消息后主动失效；IBM Plex Sans + JetBrains Mono 自托管，`font-display: swap` 渲染零阻塞
@@ -130,7 +130,7 @@ sequenceDiagram
     participant F as Functions /api
     participant KV as KV
     participant R as 接收方浏览器
-    U->>U: 选图/粘贴 → canvas 压缩（≤1920px，WebP 优先，400KB 级）
+    U->>U: 选图/粘贴 → 原图直传（不压缩，仅解码校验 + 读 w/h）
     U->>F: POST /api/img（图片二进制）
     F->>F: 魔数嗅探文件头（不信 Content-Type）
     F->>KV: put img:<id>（30 天 TTL，metadata 存 mime/size）
@@ -179,7 +179,7 @@ sequenceDiagram
 | GET | `/api/messages?room=xxx` | cookie | 返回 `{room, messages[]}`（边缘缓存 10s，浏览器侧 no-store） |
 | POST | `/api/messages` | cookie | 追加一条，body `{room, text, name, color, img?, mime?, w?, h?}` |
 | DELETE | `/api/messages?room=xxx&id=yyy` | cookie | 撤回指定消息（全员可删），带图消息顺带清图片本体 |
-| POST | `/api/img` | cookie | 上传图片二进制（≤2.5MB，jpeg/png/webp/gif），返回 `{id, mime, size}` |
+| POST | `/api/img` | cookie | 上传图片二进制（≤20MB，jpeg/png/webp/gif/avif），返回 `{id, mime, size}` |
 | GET | `/api/img?id=xxx[&dl=1]` | cookie | 取图；`dl=1` 带 attachment 头触发下载；1 年 immutable 缓存 |
 
 ### 性能设计（为什么它能「秒进」）
@@ -188,7 +188,7 @@ sequenceDiagram
 - **字体**：`media` 交换技巧异步加载 + `font-display: swap` —— 先用系统字体立刻出内容；不再请求 fonts.googleapis.com（国内重灾区，整页白屏的最大元凶）
 - **读路径**：GET 结果写边缘缓存（本节点直接回，不打 KV），TTL 仅 10 秒；缓存查询放在 `checkAuth` **之后**，未登录请求绝不回数据；发给浏览器的响应始终 `no-store`，防止「发完消息重拉列表看不到新留言」
 - **写路径**：POST 成功后立刻 `caches.default.delete` 失效该房间缓存，刷新即见新数据
-- **图片**：元数据（百字节）与本体（KB 级）分离；本体 id 即指纹、内容永不变化，浏览器与边缘放心 1 年 immutable
+- **图片**：元数据（百字节）与本体分离；本体 id 即指纹、内容永不变化，浏览器与边缘放心 1 年 immutable
 - **长文**：渲染时只渲染预览，展开时才把全文 escape + linkify 注入 DOM —— 折叠判断行数优先（>6 行）+ 字符兜底（>2000 字，拦压缩 JS/base64 这种一整行没换行的）
 
 ### 安全边界
@@ -225,7 +225,7 @@ sequenceDiagram
 | `MAX_TEXT` | `functions/api/messages.js` | 100 000 | 单条文本字符上限 |
 | `TOTAL_LIMIT` | `functions/api/messages.js` | 4MB | 单房间总长护栏 |
 | `EDGE_TTL` | `functions/api/messages.js` | 10 秒 | GET 边缘缓存时长 |
-| `MAX_BYTES` | `functions/api/img.js` | 2.5MB | 单图上传上限（前端已压到 400KB 级，这是护栏） |
+| `MAX_BYTES` | `functions/api/img.js` | 20MB | 单图上传上限（原图直传；KV 单值上限 25MB，留了余量） |
 | `IMG_TTL` | `functions/api/img.js` | 30 天 | 图片自动过期 |
 
 其他想改的：**改令牌** → 重新跑部署第 5 步的 secret 命令 + Retry deployment（全部旧会话自动失效，所有设备重输）；**要加 Markdown** → 前端加 markdown-it（注意顺序：先 escape 再 markdown 再 linkify，防 XSS）；**被 4MB 全量拉取拖慢** → 改两段式加载（列表只回 500 字预览 + 单条详情接口）；**消灭并发丢消息** → 迁 D1，append 型 INSERT 顺带解决。

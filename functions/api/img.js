@@ -13,16 +13,17 @@
 // 与 messages 一样，缓存查询放在 checkAuth 之后——未登录请求绝不回数据。
 //
 // TTL 取 30 天（比房间的 3 天滑动长）：活跃房间里的图不会被提前清掉；
-// 死房间的图最多多占 27 天存储，免费 1GB 可存 2000+ 张，可忽略。
+// 死房间的图最多多占 27 天存储，原图直传下单张几 MB，免费 1GB 也能存几百张，可忽略。
 // 被裁出 50 条窗口的消息，其图片 key 会自然过期，无需手动清理。
 
-const MAX_BYTES = 2.5 * 1024 * 1024;   // 单图 2.5MB 硬上限（客户端已压到 400KB 级，这是护栏）
+const MAX_BYTES = 20 * 1024 * 1024;    // 单图 20MB 硬上限（原图直传，手机原图 3~8MB；KV 单值上限 25MB，留余量）
 const IMG_TTL = 30 * 24 * 3600;        // 30 天后自动过期
 const MIME_EXT = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
   'image/webp': 'webp',
   'image/gif': 'gif',
+  'image/avif': 'avif',
 };
 
 function jsonResponse(obj, status = 200) {
@@ -65,6 +66,11 @@ function sniffMime(buf) {
   // WebP: RIFF....WEBP
   if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
       b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'image/webp';
+  // AVIF: ISOBMFF 容器，bytes 4-8 是 'ftyp'，主品牌 avif（静图）/ avis（动图序列）
+  if (b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) {
+    const brand = String.fromCharCode(b[8], b[9], b[10], b[11]);
+    if (brand === 'avif' || brand === 'avis') return 'image/avif';
+  }
   return null;
 }
 

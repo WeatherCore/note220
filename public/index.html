@@ -694,14 +694,13 @@
       outline: none;
       box-shadow: 0 0 0 3px rgba(250, 250, 249, 0.3);
     }
-    /* 舞台 = 滚动容器:1:1 模式下长截图可上下滑、大图可四向拖;
-       高度由 flex 撑满遮罩,不再用 100vh 硬算 —— 规避 iOS 工具栏遮挡 */
+    /* 图片舞台:高度由 flex 撑满遮罩,不再用 100vh 硬算 —— 规避 iOS 工具栏遮挡;
+       图片完整显示,点图片外的空白关闭 */
     .lb-stage {
       flex: 1;
       min-height: 0;
       overflow: auto;
-      -webkit-overflow-scrolling: touch;
-      overscroll-behavior: contain;    /* 滚到边界不连带背景页面 */
+      overscroll-behavior: contain;    /* 触屏滚到边界不连带背景页面 */
       padding: 0 16px 16px;
       padding: 0 16px max(16px, env(safe-area-inset-bottom));
     }
@@ -709,15 +708,8 @@
       display: block;
       margin: 0 auto;
       max-width: 100%;
-      max-height: 100%;                /* 适应模式:完整塞进舞台 */
+      max-height: 100%;                /* 完整塞进舞台 */
       object-fit: contain;
-      cursor: zoom-in;
-    }
-    /* 1:1 模式:解除限制按原始像素展示,配合舞台滚动看细节 */
-    .lightbox.zoomed .lb-img {
-      max-width: none;
-      max-height: none;
-      cursor: zoom-out;
     }
 
     /* ===== reduced-motion 兜底(原来完全缺失) ===== */
@@ -1256,10 +1248,9 @@
         setTimeout(function () { that.textContent = '复制链接'; }, 1200);
       };
 
-      // ===== 图片全屏预览(lightbox):点缩略图进来,可 1:1 看细节、可下载原图 =====
+      // ===== 图片全屏预览(lightbox):点缩略图进来,可下载原图 =====
       // lightbox 挂在 body 上(不在 #root 里),renderBoard 重渲染不会弄丢它。
-      // 图片放进可滚动舞台:适应模式完整看全貌;1:1 模式(点图片或「1:1」按钮切换)
-      // 按原始像素展示,长截图上下滑、大图四向拖 —— 细节靠这个看
+      // 图片放在 flex 舞台里完整显示(不用 100vh 硬算高度,规避 iOS 工具栏遮挡)
       function openLightbox(m) {
         let lb = document.getElementById('lightbox');
         if (!lb) {
@@ -1270,7 +1261,6 @@
             '<div class="lb-bar">' +
               '<span class="lb-name"></span>' +
               '<span class="lb-actions">' +
-                '<button id="lb-zoom" class="lb-btn" type="button">1:1</button>' +
                 '<a id="lb-dl" class="lb-btn" href="#">下载</a>' +
                 '<button id="lb-close" class="lb-btn" type="button">关闭</button>' +
               '</span>' +
@@ -1279,22 +1269,10 @@
           document.body.appendChild(lb);
 
           const st = lb.querySelector('.lb-stage');
-          const zb = document.getElementById('lb-zoom');
-          const setZoom = function (on) {
-            lb.classList.toggle('zoomed', on);
-            zb.textContent = on ? '适应' : '1:1';
-            st.scrollTop = 0;
-            st.scrollLeft = 0;
-          };
           const close = function () {
-            lb.classList.remove('open', 'zoomed');
-            zb.textContent = '1:1';
+            lb.classList.remove('open');
             document.body.style.overflow = '';   // 解锁背景滚动
           };
-          zb.onclick = function () { setZoom(!lb.classList.contains('zoomed')); };
-          lb.querySelector('.lb-img').addEventListener('click', function () {
-            setZoom(!lb.classList.contains('zoomed'));
-          });
           document.getElementById('lb-close').onclick = close;
           st.addEventListener('click', function (e) {
             if (e.target === st) close();        // 点图片外的遮罩空白处关闭
@@ -1304,12 +1282,6 @@
           });
         }
         const src = '/api/img?id=' + encodeURIComponent(m.img);
-        // 每次打开回到适应模式,上一张的 1:1 状态不串台
-        lb.classList.remove('zoomed');
-        document.getElementById('lb-zoom').textContent = '1:1';
-        const stage = lb.querySelector('.lb-stage');
-        stage.scrollTop = 0;
-        stage.scrollLeft = 0;
         lb.querySelector('.lb-img').src = src;
         // 下载 = 同一张图带 ?dl=1,服务端回 attachment 头,浏览器直接存盘
         document.getElementById('lb-dl').href = src + '&dl=1';

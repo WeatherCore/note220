@@ -1,6 +1,7 @@
 // GET  /api/messages?room=xxx — 返回该房间最近 50 条
 // POST /api/messages — 追加一条新留言（unshift 到数组头，裁剪后写回 KV）
 // DELETE /api/messages?room=xxx&id=yyy — 撤回一条留言（全员可删，带图连本体一起清）
+// DELETE /api/messages?room=xxx&all=1 — 焚毁整间：删房间 key + 清列表里全部图片本体
 //
 // 数据模型（每个房间一个 key）：
 //   key   = 'messages:<房间名>'（房间名仅允许 1-32 位字母/数字/ - / _，防野 key）
@@ -10,7 +11,7 @@
 // 写入带 3 天滑动 TTL：房间 3 天没人发言就整个自动清空，活跃房间每次发言续期。
 //
 // 鉴权：cookie 里的 sid 是随机会话 id（由 /api/auth 签发），
-// KV session:<sid> 的值 = sha256(ROOM_TOKEN)，对得上才放行。
+// KV session:<sid> 的值 = {fp: sha256(ROOM_TOKEN), short}，对得上才放行。
 // cookie 里不存令牌原文——这是为「陌生电脑」场景设计的。
 
 const ROOM_TTL = 3 * 24 * 3600;        // 房间滑动过期：3 天没人发言整间清空
@@ -19,6 +20,15 @@ const MAX_TEXT = 100000;               // 单条文本最长字符（约一个�
 const MAX_FIELD = 64;                  // name/color 字段最长
 const TOTAL_LIMIT = 4 * 1024 * 1024;   // 单房间总长护栏（KV value 上限 25MB，留足余量）
 const EDGE_TTL = 10;                   // GET 结果的边缘缓存秒数：显著加快「秒进」，POST 时主动失效
+
+// color 只放行前端自己生成的 hsl(数字, 数字%, 数字%) 形态。
+// 这不是审美约束而是安全约束：color 会被前端原样拼进 style="background:…"，
+// 裸收任意字符串的话，"red;background:url(//evil/x)" 这类值能注入任意 CSS。
+// 注意正则里没有分号/括号/斜杠以外的任何危险字符可达——数字形态天然挡死注入面。
+const HSL_RE = /^hsl\(\d{1,3}, ?\d{1,3}%, ?\d{1,3}%\)$/;
+// 图片 mime 白名单：必须与 img.js 魔数嗅探的产出集完全一致。
+// 曾经漏掉 avif —— 图片上传成功拿到 id，发消息却 400，图片本体成了 30 天孤儿 key。
+const IMG_MIMES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'];
 
 function jsonResponse(obj, status, extraHeaders = {}) {
   return new Response(JSON.stringify(obj), {
@@ -36,14 +46,24 @@ async function sha256Hex(s) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// 返回 false（未登录）或 { short: 是否短会话 }。
+// short 供需要分流缓存策略的端点用（/api/img：短会话响应 no-store，见 img.js）。
 async function checkAuth(request, env) {
   if (!env.ROOM_TOKEN || !env.MESSAGES) return false;
   const m = (request.headers.get('Cookie') || '').match(/sid=([a-f0-9]{32})/);
   if (!m) return false;
   const stored = await env.MESSAGES.get('session:' + m[1]);
   if (!stored) return false;
-  // 掺入令牌指纹：改令牌 = 全部旧会话自动失效
-  return stored === (await sha256Hex(env.ROOM_TOKEN));
+  const fp = await sha256Hex(env.ROOM_TOKEN);
+  // v1 旧格式（裸指纹字符串）兼容读取，一律按短会话兜底——改令牌照样全体失效，
+  // 存量设备最坏 30 分钟后自然过期，无需重新输令牌
+  if (stored === fp) return { short: true };
+  // v2 格式 {"fp":"...","short":bool}
+  try {
+    const o = JSON.parse(stored);
+    if (o && typeof o.fp === 'string' && o.fp === fp) return { short: !!o.short };
+  } catch (e) { /* 非 JSON 坏值当未登录 */ }
+  return false;
 }
 
 function genId() {
@@ -62,6 +82,14 @@ async function readList(env, room) {
   }
 }
 
+// POST / DELETE 成功后立刻失效该房间的边缘缓存，下一次 GET（包括刷新页面）拿到的是新数据。
+// 失效失败也只是多等 10 秒 TTL，不影响本次请求
+async function invalidateEdge(origin, room) {
+  try {
+    await caches.default.delete(new Request(origin + '/__edge/messages?room=' + room, { method: 'GET' }));
+  } catch (e) { /* 忽略 */ }
+}
+
 // ===== GET /api/messages =====
 export async function onRequestGet({ request, env, context }) {
   if (!env.MESSAGES) return jsonResponse({ error: 'KV not bound' }, 500);
@@ -72,7 +100,7 @@ export async function onRequestGet({ request, env, context }) {
 
   // 边缘缓存：同一房间 10 秒内的重复 GET 直接回本节点缓存，不打 KV。
   // 注意必须放在 checkAuth 之后——绝不能把留言数据回给未登录请求。
-  // 缓存内容是「房间级」数据（和哪个用户无关），按 URL 缓存是安全的。
+  // 缓存内容是「房间级」数据（和哪个用户无关，响应头对所有会话一致），按 URL 缓存是安全的。
   const cacheKey = new Request(url.origin + '/__edge/messages?room=' + room, { method: 'GET' });
   try {
     const hit = await caches.default.match(cacheKey);
@@ -126,13 +154,14 @@ export async function onRequestPost({ request, env }) {
   const room = getRoomName(body && body.room);
   const text = (body && typeof body.text === 'string' ? body.text : '').slice(0, MAX_TEXT).trim();
   const name = (body && typeof body.name === 'string' ? body.name : '').slice(0, MAX_FIELD).trim();
-  const color = (body && typeof body.color === 'string' ? body.color : '').slice(0, MAX_FIELD);
+  // color  server 端锁死 hsl 数字形态（前端渲染时同样校验、不合规格回退中性色，双保险）
+  let color = (body && typeof body.color === 'string' ? body.color : '').slice(0, MAX_FIELD).trim();
+  if (color && !HSL_RE.test(color)) color = '';
 
   // 图片元数据（可选）：img 必须是 /api/img 签发的 32 位 hex id。
-  // mime 只接受白名单；w/h 是缩略图占位尺寸，防布局跳动用，限个安全范围。
+  // mime 只接受白名单（含 avif —— 与 img.js 魔数嗅探产出集一致）；w/h 是占位尺寸，限个安全范围。
   const imgId = body && typeof body.img === 'string' ? body.img : '';
   if (imgId && !/^[a-f0-9]{32}$/.test(imgId)) return jsonResponse({ error: 'bad img id' }, 400);
-  const IMG_MIMES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
   const mime = body && typeof body.mime === 'string' && IMG_MIMES.indexOf(body.mime) !== -1 ? body.mime : '';
   const w = body && Number.isInteger(body.w) ? Math.min(Math.max(body.w, 0), 10000) : 0;
   const h = body && Number.isInteger(body.h) ? Math.min(Math.max(body.h, 0), 10000) : 0;
@@ -171,25 +200,45 @@ export async function onRequestPost({ request, env }) {
   }
   await env.MESSAGES.put('messages:' + room, json, { expirationTtl: ROOM_TTL });
 
-  // 有新留言：立刻失效该房间的边缘缓存，下一次 GET（包括刷新页面）拿到的是新数据
-  try {
-    const origin = new URL(request.url).origin;
-    await caches.default.delete(new Request(origin + '/__edge/messages?room=' + room, { method: 'GET' }));
-  } catch (e) { /* 失效失败也只是多等 10 秒 TTL */ }
+  await invalidateEdge(url_origin(request), room);
 
   return jsonResponse({ ok: true, message: msg });
 }
 
-// ===== DELETE /api/messages?room=xxx&id=<32位hex> =====
-// 撤回消息，全员可删：房间是共用的，任何持有效会话的人都能删任何一条。
-// 实现 = 从数组里去掉该 id 后整体写回（与 POST 同样的读改写竞态窗口，
-// 极端并发下可能互相覆盖，对寝室场景可接受；迁 D1 后变成 DELETE WHERE id=?）。
+// ===== DELETE /api/messages =====
+// 两种形态：
+//   ?room=xxx&id=<32位hex>  撤回单条，全员可删（房间共用，任何持有效会话的人都能删任何一条）
+//   ?room=xxx&all=1         焚毁整间：删房间 key + 顺手清列表里全部图片本体 key
+// 实现都是「读数组 → 改 → 整体写回」（与 POST 同样的读改写竞态窗口，
+// 极端并发下可能互相覆盖，对寝室场景可接受；迁 D1 后变成按行 DELETE）。
 export async function onRequestDelete({ request, env, context }) {
   if (!env.MESSAGES) return jsonResponse({ error: 'KV not bound' }, 500);
   if (!(await checkAuth(request, env))) return jsonResponse({ error: 'unauthorized' }, 401);
 
   const url = new URL(request.url);
   const room = getRoomName(url.searchParams.get('room'));
+  const all = url.searchParams.get('all') === '1';
+
+  if (all) {
+    // ===== 焚毁整间 =====
+    const list = await readList(env, room);
+    // 图片本体 key 一并清掉，否则它们会孤悬到 30 天自然过期，白占存储
+    const imgIds = [];
+    for (const m of list) { if (m && typeof m.img === 'string' && /^[a-f0-9]{32}$/.test(m.img)) imgIds.push(m.img); }
+    await env.MESSAGES.delete('messages:' + room);
+    if (imgIds.length) {
+      // 批量删除挂 waitUntil：响应先回，删除慢慢做；单张失败有 30 天 TTL 兜底
+      const p = Promise.all(imgIds.map(id => env.MESSAGES.delete('img:' + id).catch(() => {})));
+      if (context && typeof context.waitUntil === 'function') {
+        context.waitUntil(p);
+      } else {
+        await p;
+      }
+    }
+    await invalidateEdge(url_origin(request), room);
+    return jsonResponse({ ok: true, burned: list.length });
+  }
+
   const id = url.searchParams.get('id') || '';
   // id 必须是 /api/messages 签发的 32 位 hex，与图片 id 同一套白名单
   if (!/^[a-f0-9]{32}$/.test(id)) return jsonResponse({ error: 'bad id' }, 400);
@@ -216,10 +265,7 @@ export async function onRequestDelete({ request, env, context }) {
   await env.MESSAGES.put('messages:' + room, JSON.stringify(list), { expirationTtl: ROOM_TTL });
 
   // 与 POST 一致：立刻失效该房间的边缘缓存，其他人的下一次刷新拿到的是删后数据
-  try {
-    const origin = new URL(request.url).origin;
-    await caches.default.delete(new Request(origin + '/__edge/messages?room=' + room, { method: 'GET' }));
-  } catch (e) { /* 失效失败也只是多等 10 秒 TTL */ }
+  await invalidateEdge(url_origin(request), room);
 
   return jsonResponse({ ok: true });
 }
@@ -230,8 +276,12 @@ export async function onRequestOptions() {
     status: 204,
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
     },
   });
+}
+
+function url_origin(request) {
+  try { return new URL(request.url).origin; } catch (e) { return ''; }
 }

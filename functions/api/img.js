@@ -8,8 +8,11 @@
 // 「秒进」直接报废。消息里只挂 {img: id, w, h, mime} 百字节级元数据，
 // 前端用 <img loading="lazy"> 按需加载，滚到哪加载到哪。
 //
-// 缓存策略：图片内容永不变化（id 即指纹），浏览器与边缘都可放心长缓存：
-//   Cache-Control: public, max-age=31536000, immutable
+// 缓存策略（按会话类别分流，v2 新增）：
+//   长会话（记住我 = 自己的设备）：id 即指纹、内容永不变化，浏览器与边缘 1 年 immutable；
+//   短会话（陌生电脑）：no-store，浏览器与边缘都不落 —— 退出/过期后本机磁盘不留图，
+//   否则「退出即吊销」的承诺被磁盘缓存架空。短会话必须完全绕开边缘缓存：
+//   命中别人写进去的 long 副本，图照样会进短会话自己的磁盘。
 // 与 messages 一样，缓存查询放在 checkAuth 之后——未登录请求绝不回数据。
 //
 // TTL 取 30 天（比房间的 3 天滑动长）：活跃房间里的图不会被提前清掉；
@@ -38,13 +41,21 @@ async function sha256Hex(s) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// 返回 false（未登录）或 { short: 是否短会话 }，与 messages.js 的 checkAuth 同一实现
 async function checkAuth(request, env) {
   if (!env.ROOM_TOKEN || !env.MESSAGES) return false;
   const m = (request.headers.get('Cookie') || '').match(/sid=([a-f0-9]{32})/);
   if (!m) return false;
   const stored = await env.MESSAGES.get('session:' + m[1]);
   if (!stored) return false;
-  return stored === (await sha256Hex(env.ROOM_TOKEN));
+  const fp = await sha256Hex(env.ROOM_TOKEN);
+  // v1 旧格式（裸指纹）兼容：按短会话兜底
+  if (stored === fp) return { short: true };
+  try {
+    const o = JSON.parse(stored);
+    if (o && typeof o.fp === 'string' && o.fp === fp) return { short: !!o.short };
+  } catch (e) { /* 非 JSON 坏值当未登录 */ }
+  return false;
 }
 
 function genId() {
@@ -105,15 +116,24 @@ export async function onRequestPost({ request, env }) {
 // ===== GET /api/img?id=xxx[&dl=1] =====
 export async function onRequestGet({ request, env, context }) {
   if (!env.MESSAGES) return jsonResponse({ error: 'KV not bound' }, 500);
-  if (!(await checkAuth(request, env))) return jsonResponse({ error: 'unauthorized' }, 401);
+  const auth = await checkAuth(request, env);
+  if (!auth) return jsonResponse({ error: 'unauthorized' }, 401);
 
   const url = new URL(request.url);
   const id = url.searchParams.get('id') || '';
   if (!/^[a-f0-9]{32}$/.test(id)) return jsonResponse({ error: 'bad id' }, 400);
   const dl = url.searchParams.get('dl') === '1';
 
-  // 边缘缓存：同一张图（含 dl 变体）本节点直接回，不打 KV。
-  // 缓存副本自带全套响应头（Content-Type / immutable / attachment），可直接返回。
+  // ===== 短会话（陌生电脑）：完全绕开边缘缓存 + no-store =====
+  // 不查缓存的原因：命中别人写进去的 long 副本，图照样进短会话自己的磁盘，
+  // 「退出即吊销」就被架空了。代价：短会话重复看图每次都打 KV，可接受。
+  if (auth.short) {
+    const short = await env.MESSAGES.getWithMetadata('img:' + id, { type: 'arrayBuffer' });
+    if (!short.value) return jsonResponse({ error: 'not found' }, 404);
+    return buildImgResponse(short.value, short.metadata, id, dl, true);
+  }
+
+  // ===== 长会话（自己的设备）：边缘缓存直回，不打 KV；immutable 1 年 =====
   const cacheKey = new Request(url.origin + '/__edge/img/' + id + (dl ? '?dl=1' : ''), { method: 'GET' });
   try {
     const hit = await caches.default.match(cacheKey);
@@ -123,23 +143,27 @@ export async function onRequestGet({ request, env, context }) {
   const { value, metadata } = await env.MESSAGES.getWithMetadata('img:' + id, { type: 'arrayBuffer' });
   if (!value) return jsonResponse({ error: 'not found' }, 404);
 
-  const mime = (metadata && metadata.mime) || 'application/octet-stream';
-  const headers = {
-    'Content-Type': mime,
-    'Cache-Control': 'public, max-age=31536000, immutable',
-  };
-  if (dl) {
-    const ext = MIME_EXT[mime] || 'bin';
-    headers['Content-Disposition'] = 'attachment; filename="note220-' + id.slice(0, 8) + '.' + ext + '"';
-  }
-
-  const res = new Response(value, { headers });
+  const res = buildImgResponse(value, metadata, id, dl, false);
   try {
     if (context && typeof context.waitUntil === 'function') {
       context.waitUntil(caches.default.put(cacheKey, res.clone()));
     }
   } catch (e) { /* 缓存失败不影响本次响应 */ }
   return res;
+}
+
+// 组装图片响应：short=true 时 no-store（不留本机磁盘）；否则 1 年 immutable（id 即指纹，内容永不变化）
+function buildImgResponse(value, metadata, id, dl, short) {
+  const mime = (metadata && metadata.mime) || 'application/octet-stream';
+  const headers = {
+    'Content-Type': mime,
+    'Cache-Control': short ? 'no-store' : 'public, max-age=31536000, immutable',
+  };
+  if (dl) {
+    const ext = MIME_EXT[mime] || 'bin';
+    headers['Content-Disposition'] = 'attachment; filename="note220-' + id.slice(0, 8) + '.' + ext + '"';
+  }
+  return new Response(value, { headers });
 }
 
 // ===== OPTIONS（CORS 预检，与 /api/messages 保持一致） =====

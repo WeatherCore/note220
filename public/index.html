@@ -31,7 +31,7 @@
        走向:亮色 Swiss / Flat — 暖灰 stone + 深墨黑主色 + 克制绿状态色
        字体:IBM Plex Sans (UI) + JetBrains Mono (URL / 令牌 / ID / hash)
        设计取舍:远离 SaaS 蓝(#4a90e2),靠 1px 边框分层而非阴影,
-                等宽只用在字符型内容上,中文走 sans 避免 fallback 错位
+                 等宽只用在字符型内容上,中文走 sans 避免 fallback 错位
        ============================================================ */
     :root {
       /* 颜色:暖灰 stone 系,主 CTA 直接深墨黑实心,绿/红只做状态色 */
@@ -112,6 +112,21 @@
     .mini-btn:focus-visible {
       outline: none;
       box-shadow: 0 0 0 3px var(--ring);
+    }
+    /* 焚毁按钮:danger 红调,hover 强化,与普通 mini-btn 同构 */
+    .mini-btn.burn-btn {
+      color: var(--danger);
+      border-color: #E4B6B6;
+    }
+    .mini-btn.burn-btn:hover {
+      background: #FCEBEB;
+      border-color: var(--danger);
+    }
+    .mini-btn:disabled {
+      color: var(--muted);
+      border-color: var(--border);
+      cursor: not-allowed;
+      background: transparent;
     }
 
     .hint {
@@ -280,41 +295,22 @@
       line-height: 1.55;
     }
     .composer { align-items: flex-end; }  /* 覆盖 stretch:图片/发送按钮沉底对齐 */
-    .composer .composer-img-btn {
-      /* 幽灵方块按钮:优先级压过 .composer button 的深墨 CTA 样式 */
-      width: 44px;
-      flex-shrink: 0;
-      padding: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: transparent;
-      color: var(--muted-2);
-      border: 1px solid var(--border-strong);
-      border-radius: var(--radius);
-      cursor: pointer;
-      min-height: 44px;
-      transition: background var(--t-fast) ease, color var(--t-fast) ease, border-color var(--t-fast) ease;
+
+    /* composer 内联错误:发送/上传失败落在这里(role=alert,屏幕阅读器会播报),
+       不再用 alert() 打断;空的时候 hidden 不占位 */
+    .composer-err {
+      font-size: 12px;
+      color: var(--danger);
+      margin: 0 0 8px;
+      line-height: 1.55;
     }
-    .composer .composer-img-btn:hover {
-      background: #F5F5F4;
-      color: var(--fg);
-      border-color: var(--fg);
-    }
-    .composer .composer-img-btn:focus-visible {
-      outline: none;
-      box-shadow: 0 0 0 3px var(--ring);
-    }
-    .composer .composer-img-btn:disabled {
-      background: transparent;
-      color: var(--border-strong);
-      border-color: var(--border);
-      cursor: wait;
-    }
+    .composer-err[hidden] { display: none; }
+
+    /* ===== 待发图片条 + 上传进度 ===== */
     .attach-strip {
       display: flex;
-      align-items: center;
-      gap: 10px;
+      flex-direction: column;          /* 主行 + 进度行,上下堆叠 */
+      gap: 6px;
       padding: 6px 8px;
       margin-top: 8px;                 /* 位于 composer 行下方 */
       background: var(--card);
@@ -324,6 +320,7 @@
     /* 关键:display:flex 会盖掉 hidden 属性的 UA 默认 display:none,
        必须显式声明,否则没选图时这行也一直占着地方 */
     .attach-strip[hidden] { display: none; }
+    .strip-main { display: flex; align-items: center; gap: 10px; width: 100%; }
     .attach-thumb {
       width: 40px;
       height: 40px;
@@ -357,11 +354,137 @@
       color: var(--muted-2);
       cursor: pointer;
       flex-shrink: 0;
-      min-height: 24px;
+      min-height: 28px;
       transition: color var(--t-fast) ease, border-color var(--t-fast) ease;
     }
     .attach-remove:hover { color: var(--danger); border-color: var(--danger); }
     .attach-remove:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--ring);
+    }
+    /* 上传进度行:20MB 原图直传在宿舍 WiFi 下要几十秒,
+       黑盒等待不可接受 —— 进度条 + 已传/总量 + 取消按钮 */
+    .strip-up { display: flex; align-items: center; gap: 10px; width: 100%; }
+    .strip-up[hidden] { display: none; }
+    .up-bar {
+      flex: 1;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .up-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--fg);
+      transition: width 150ms ease;
+    }
+    .up-pct {
+      font-size: 11px;
+      color: var(--muted-2);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .up-cancel {
+      padding: 4px 10px;
+      font-size: 11px;
+      font-family: var(--font-sans);
+      background: transparent;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      color: var(--muted-2);
+      cursor: pointer;
+      flex-shrink: 0;
+      min-height: 28px;
+      transition: color var(--t-fast) ease, border-color var(--t-fast) ease;
+    }
+    .up-cancel:hover { color: var(--danger); border-color: var(--danger); }
+    .up-cancel:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--ring);
+    }
+
+    /* ===== 内联面板(换房 / 改名):替代阻塞式 prompt,
+       手机上不再弹系统对话框,面板内可以放最近房间 chip ===== */
+    .inline-panel {
+      margin: 0 0 16px;
+      padding: 14px;
+      background: var(--card);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+    .inline-panel[hidden] { display: none; }
+    .inline-panel h2 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .panel-row { display: flex; gap: 8px; }
+    .panel-row input {
+      flex: 1;
+      min-width: 0;
+      padding: 10px 12px;
+      font-size: 13px;
+      font-family: var(--font-mono);
+      background: var(--bg);
+      color: var(--fg);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      outline: none;
+      transition: border-color var(--t-fast) ease, box-shadow var(--t-fast) ease;
+    }
+    .panel-row input:focus {
+      border-color: var(--fg);
+      box-shadow: 0 0 0 3px var(--ring);
+    }
+    .panel-btn {
+      padding: 0 14px;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: var(--font-sans);
+      background: var(--accent);
+      color: var(--on-accent);
+      border: none;
+      border-radius: var(--radius);
+      cursor: pointer;
+      min-height: 40px;
+      flex-shrink: 0;
+      transition: opacity var(--t-fast) ease;
+    }
+    .panel-btn:hover { opacity: 0.85; }
+    .panel-btn:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--ring);
+    }
+    .panel-btn.ghost {
+      background: transparent;
+      color: var(--muted-2);
+      border: 1px solid var(--border-strong);
+      font-weight: 500;
+    }
+    .panel-btn.ghost:hover { background: #F5F5F4; color: var(--fg); border-color: var(--fg); }
+    .panel-foot { margin-top: 10px; }
+    .recent-label {
+      font-size: 11px;
+      color: var(--muted-2);
+      margin: 12px 0 6px;
+    }
+    .recent-rooms { display: flex; flex-wrap: wrap; gap: 6px; }
+    .rr-chip {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      padding: 4px 12px;
+      border: 1px solid var(--border-strong);
+      border-radius: 999px;
+      background: transparent;
+      cursor: pointer;
+      color: var(--fg);
+      min-height: 28px;
+      transition: background var(--t-fast) ease, border-color var(--t-fast) ease;
+    }
+    .rr-chip:hover { background: #F5F5F4; border-color: var(--fg); }
+    .rr-chip:focus-visible {
       outline: none;
       box-shadow: 0 0 0 3px var(--ring);
     }
@@ -412,8 +535,8 @@
       align-items: center;
     }
     .copy-btn {
-      /* 修复:padding 1px 8px → 4px 10px,触摸目标 ~24×24 起 */
-      padding: 4px 10px;
+      /* 触摸目标 24 → 28px:贴着 web-target-size 下限,再大 meta 行要换行 */
+      padding: 6px 12px;
       font-size: 11px;
       font-family: var(--font-sans);
       background: transparent;
@@ -423,7 +546,7 @@
       cursor: pointer;
       flex-shrink: 0;
       transition: background var(--t-fast) ease, color var(--t-fast) ease, border-color var(--t-fast) ease;
-      min-height: 24px;
+      min-height: 28px;
       line-height: 1;
     }
     .copy-btn:hover {
@@ -438,7 +561,7 @@
     }
     .del-btn {
       /* 删除按钮:样式与复制按钮同构,hover 走 danger 红,提示破坏性 */
-      padding: 4px 10px;
+      padding: 6px 12px;
       font-size: 11px;
       font-family: var(--font-sans);
       background: transparent;
@@ -448,7 +571,7 @@
       cursor: pointer;
       flex-shrink: 0;
       transition: background var(--t-fast) ease, color var(--t-fast) ease, border-color var(--t-fast) ease;
-      min-height: 24px;
+      min-height: 28px;
       line-height: 1;
     }
     .del-btn:hover {
@@ -712,6 +835,39 @@
       object-fit: contain;
     }
 
+    /* ===== toast 轻提示:替代阻塞式 alert,底部浮出自动消失;
+       aria-live=polite 让屏幕阅读器也能听到 ===== */
+    #toast-zone {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      z-index: 1200;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: center;
+      pointer-events: none;            /* 容器不挡点击,单条 toast 可选中复制 */
+      max-width: min(92vw, 480px);
+    }
+    .toast {
+      pointer-events: auto;
+      background: var(--fg);
+      color: var(--on-accent);
+      font-size: 13px;
+      line-height: 1.5;
+      padding: 10px 16px;
+      border-radius: var(--radius);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity var(--t-base) ease, transform var(--t-base) ease;
+      max-width: 100%;
+      word-break: break-word;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.err { background: var(--danger); }
+
     /* ===== reduced-motion 兜底(原来完全缺失) ===== */
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {
@@ -750,6 +906,37 @@
       const pad = n => String(n).padStart(2, '0');
       return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
     }
+    function fmtSize(n) {
+      return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+    }
+    // 随机房间名:8 位 hex,做一次性传输管道用(与图片 id 同一随机源思路)
+    function genRoomId() {
+      const buf = new Uint8Array(4);
+      crypto.getRandomValues(buf);
+      return Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    // 可点 chip 的 a11y 收口:role=button + tabindex + Enter/Space 触发
+    function chipActivate(el, fn) {
+      if (!el) return;
+      el.setAttribute('role', 'button');
+      el.setAttribute('tabindex', '0');
+      el.onclick = fn;
+      el.onkeydown = function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); }
+      };
+    }
+
+    // ============ 全局运行态:renderBoard 重绘不丢的东西都挂模块作用域 ============
+    const root = document.getElementById('root');
+    let currentMessages = [];   // 供复制按钮/图片点击按索引取原文
+    let pendingImg = null;      // 待发图片 { blob, mime, w, h, name, url } —— 重绘/回登录页都不丢
+    let uploadXhr = null;       // 进行中的上传 XHR(可取消)
+    let lastRoom = null;        // 上次渲染的房间(轮询防重绘 + 未读计数用)
+    let lastIdSet = new Set();  // 上次渲染的消息 id 集合
+    let unread = 0;             // 未读新消息数(标签页标题角标)
+    let pollTimer = null;       // 30s 轮询句柄
+    let panelOpener = null;     // 打开内联面板前的触发元素(关闭时还焦)
+    const TITLE_BASE = document.title;
 
     // ============ 身份（昵称 + 颜色，存 localStorage） ============
     function getIdentity() {
@@ -780,11 +967,241 @@
       return /^[a-zA-Z0-9_-]{1,32}$/.test(r) ? r : 'main';
     }
 
-    // ============ 路由：根据登录态渲染不同 UI ============
-    const root = document.getElementById('root');
-    let currentMessages = []; // 供复制按钮按索引取原文
+    // ============ 草稿持久化:按房间存 localStorage ============
+    // renderBoard 整树重绘(发送 401 / 删消息 / 改名 / 轮询换数据)都会重建 composer,
+    // 不持久化的话正在输入的草稿会被无声清空 —— 对「传 10 万字代码」的工具是最伤的。
+    function draftKey(room) { return 'note220:draft:' + room; }
+    function saveDraft(room, text) {
+      try {
+        if (text) localStorage.setItem(draftKey(room), text);
+        else localStorage.removeItem(draftKey(room));
+      } catch (e) { /* 存储满/隐私模式:草稿退化为仅内存 */ }
+    }
+    function loadDraft(room) {
+      try { return localStorage.getItem(draftKey(room)) || ''; } catch (e) { return ''; }
+    }
 
+    // ============ 最近房间(localStorage 存最近 8 个):换房面板的点即跳 ============
+    function recentRooms() {
+      try { return JSON.parse(localStorage.getItem('note220:rooms') || '[]') || []; } catch (e) { return []; }
+    }
+    function pushRecentRoom(room) {
+      if (!room) return;
+      const list = recentRooms().filter(function (r) { return r !== room; });
+      list.unshift(room);
+      try { localStorage.setItem('note220:rooms', JSON.stringify(list.slice(0, 8))); } catch (e) {}
+    }
+
+    // ============ toast 轻提示:替代阻塞式 alert ============
+    function showToast(msg, isErr) {
+      let zone = document.getElementById('toast-zone');
+      if (!zone) {
+        zone = document.createElement('div');
+        zone.id = 'toast-zone';
+        zone.setAttribute('aria-live', 'polite');
+        document.body.appendChild(zone);
+      }
+      const t = document.createElement('div');
+      t.className = 'toast' + (isErr ? ' err' : '');
+      t.textContent = msg;
+      zone.appendChild(t);
+      requestAnimationFrame(function () { t.classList.add('show'); });
+      setTimeout(function () {
+        t.classList.remove('show');
+        setTimeout(function () { t.remove(); }, 300);
+      }, 2600);
+    }
+
+    // ============ composer 内联错误(role=alert,发送/上传失败落这里) ============
+    function setComposerErr(msg) {
+      const el = document.getElementById('composer-err');
+      if (!el) return;
+      el.textContent = msg || '';
+      el.hidden = !msg;
+    }
+
+    // ============ 轮询 + 未读角标 ============
+    // 页面可见时 30s 拉一次;回前台立即拉一次。列表无变化(比对新消息 id 集合)不重绘,
+    // 打字时焦点绝不被重绘打断。后台/失焦期间到达的新消息计入标题角标,回前台清零。
+    function updateTitle() {
+      document.title = unread > 0 ? '(' + unread + ') ' + TITLE_BASE : TITLE_BASE;
+    }
+    function clearUnread() {
+      if (unread !== 0) { unread = 0; updateTitle(); }
+    }
+    function startPolling() {
+      if (pollTimer) return;
+      pollTimer = setInterval(function () {
+        if (document.visibilityState === 'visible') loadBoard({ silent: true });
+      }, 30000);
+    }
+    function stopPolling() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+    window.addEventListener('focus', clearUnread);
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') {
+        clearUnread();
+        loadBoard({ silent: true });   // 切回页面立即对齐数据,不等下一个 30s
+      }
+    });
+
+    // ============ 全局键盘:Esc 关 lightbox/面板;Tab 在 lightbox 内打圈(焦点陷阱) ============
+    document.addEventListener('keydown', function (e) {
+      const lb = document.getElementById('lightbox');
+      const lbOpen = lb && lb.classList.contains('open');
+      if (e.key === 'Escape') {
+        if (lbOpen) { closeLightbox(); return; }
+        closePanels();
+        return;
+      }
+      if (e.key === 'Tab' && lbOpen) {
+        const f = lb.querySelectorAll('a[href], button');
+        if (!f.length) return;
+        const first = f[0], last = f[f.length - 1];
+        if (!lb.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+        else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    });
+
+    // ============ 内联面板(换房 / 改名):替代阻塞式 prompt ============
+    function closePanels(restoreFocus) {
+      const rp = document.getElementById('room-panel');
+      const np = document.getElementById('name-panel');
+      let wasOpen = false;
+      if (rp && !rp.hidden) { rp.hidden = true; wasOpen = true; }
+      if (np && !np.hidden) { np.hidden = true; wasOpen = true; }
+      if (wasOpen && restoreFocus !== false && panelOpener && panelOpener.isConnected) panelOpener.focus();
+      panelOpener = null;
+    }
+    function toggleRoomPanel() {
+      const p = document.getElementById('room-panel');
+      if (p && !p.hidden) { closePanels(); return; }
+      closePanels(false);
+      panelOpener = document.getElementById('room-chip');
+      p.hidden = false;
+      const recents = recentRooms().filter(function (r) { return r !== getRoom(); });
+      p.innerHTML =
+        '<h2>换房 / 开新房</h2>' +
+        '<div class="panel-row">' +
+          '<input id="room-input" maxlength="32" placeholder="房间名（1-32 位字母/数字/ - / _）" autocomplete="off" aria-label="房间名">' +
+          '<button id="room-go" class="panel-btn" type="button">进入</button>' +
+        '</div>' +
+        (recents.length
+          ? '<p class="recent-label">最近去过的房间</p><div class="recent-rooms">' +
+            recents.map(function (r) {
+              return '<button type="button" class="rr-chip" data-room="' + escapeHtml(r) + '">#' + escapeHtml(r) + '</button>';
+            }).join('') + '</div>'
+          : '') +
+        '<div class="panel-row panel-foot">' +
+          '<button id="room-random" class="panel-btn ghost" type="button">随机新房</button>' +
+          '<button id="room-cancel" class="panel-btn ghost" type="button">取消</button>' +
+        '</div>';
+      const input = document.getElementById('room-input');
+      const go = function () {
+        const v = input.value.trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
+        if (!v) { input.focus(); return; }
+        if (v !== getRoom()) location.hash = 'r=' + v;   // 触发 hashchange → loadBoard
+        closePanels();
+      };
+      document.getElementById('room-go').onclick = go;
+      input.onkeydown = function (e) { if (e.key === 'Enter') go(); };
+      p.querySelectorAll('.rr-chip').forEach(function (c) {
+        c.onclick = function () {
+          const r = c.getAttribute('data-room');
+          if (r && r !== getRoom()) location.hash = 'r=' + r;
+          closePanels();
+        };
+      });
+      document.getElementById('room-random').onclick = function () { input.value = genRoomId(); input.focus(); };
+      document.getElementById('room-cancel').onclick = function () { closePanels(); };
+      input.focus();
+    }
+    function toggleNamePanel() {
+      const p = document.getElementById('name-panel');
+      if (p && !p.hidden) { closePanels(); return; }
+      closePanels(false);
+      panelOpener = document.getElementById('name-chip');
+      p.hidden = false;
+      p.innerHTML =
+        '<h2>改名字</h2>' +
+        '<div class="panel-row">' +
+          '<input id="name-input" maxlength="64" placeholder="你叫什么（发消息时显示，≤64 字符）" autocomplete="off" aria-label="昵称">' +
+          '<button id="name-save" class="panel-btn" type="button">保存</button>' +
+        '</div>' +
+        '<div class="panel-row panel-foot">' +
+          '<button id="name-cancel" class="panel-btn ghost" type="button">取消</button>' +
+        '</div>';
+      const input = document.getElementById('name-input');
+      input.value = getIdentity().name;
+      const save = function () {
+        const v = input.value.trim().slice(0, 64);
+        if (!v) { input.focus(); return; }
+        localStorage.setItem('anon_name', v);
+        closePanels();
+        loadBoard();   // 草稿在 localStorage 里,重绘后自动恢复,改名不再丢草稿
+      };
+      document.getElementById('name-save').onclick = save;
+      input.onkeydown = function (e) { if (e.key === 'Enter') save(); };
+      document.getElementById('name-cancel').onclick = function () { closePanels(); };
+      input.focus();
+      input.select();
+    }
+
+    // ============ 图片全屏预览(lightbox):点缩略图进来,可下载原图 ============
+    // lightbox 挂在 body 上(不在 #root 里),renderBoard 重渲染不会弄丢它。
+    // 焦点管理:打开圈焦进对话框 + Tab 焦点陷阱,关闭把焦点还给触发元素。
+    let lbLastFocus = null;
+    function closeLightbox() {
+      const lb = document.getElementById('lightbox');
+      if (!lb) return;
+      lb.classList.remove('open');
+      document.body.style.overflow = '';   // 解锁背景滚动
+      if (lbLastFocus && lbLastFocus.isConnected) lbLastFocus.focus();
+      lbLastFocus = null;
+    }
+    function openLightbox(m) {
+      let lb = document.getElementById('lightbox');
+      if (!lb) {
+        lb = document.createElement('div');
+        lb.id = 'lightbox';
+        lb.className = 'lightbox';
+        lb.innerHTML =
+          '<div class="lb-bar">' +
+            '<span class="lb-name"></span>' +
+            '<span class="lb-actions">' +
+              '<a id="lb-dl" class="lb-btn" href="#">下载</a>' +
+              '<button id="lb-close" class="lb-btn" type="button">关闭</button>' +
+            '</span>' +
+          '</div>' +
+          '<div class="lb-stage"><img class="lb-img" alt="图片预览"></div>';
+        document.body.appendChild(lb);
+
+        const st = lb.querySelector('.lb-stage');
+        st.addEventListener('click', function (e) {
+          if (e.target === st) closeLightbox();   // 点图片外的遮罩空白处关闭
+        });
+      }
+      lb.setAttribute('role', 'dialog');
+      lb.setAttribute('aria-modal', 'true');
+      lb.setAttribute('aria-label', '图片全屏预览');
+      lbLastFocus = document.activeElement;
+      const src = '/api/img?id=' + encodeURIComponent(m.img);
+      lb.querySelector('.lb-img').src = src;
+      // 下载 = 同一张图带 ?dl=1,服务端回 attachment 头,浏览器直接存盘
+      document.getElementById('lb-dl').href = src + '&dl=1';
+      lb.querySelector('.lb-name').textContent =
+        '@ ' + (m.name || 'unknown') + (m.w && m.h ? ' · ' + m.w + '×' + m.h : '');
+      // 打开即锁背景滚动:触屏上 fixed 遮罩本身挡不住 touchmove 连带滚动
+      document.body.style.overflow = 'hidden';
+      lb.classList.add('open');
+      document.getElementById('lb-close').focus();
+    }
+
+    // ============ 路由：根据登录态渲染不同 UI ============
     function renderAuth() {
+      stopPolling();
       root.innerHTML =
         '<div class="auth-wrap">' +
           '<div class="auth-box">' +
@@ -796,7 +1213,7 @@
               '<span>记住我（自己的设备勾：1 年免输；陌生电脑别勾：30 分钟自动过期）</span>' +
             '</label>' +
             '<button id="token-btn">进入</button>' +
-            '<div class="err" id="token-err"></div>' +
+            '<div class="err" id="token-err" role="alert"></div>' +
           '</div>' +
         '</div>';
       const input = document.getElementById('token-input');
@@ -813,9 +1230,13 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token: token, remember: chk.checked }),
           });
-          btn.disabled = false; btn.textContent = '进入';
           if (r.ok) {
             await loadBoard();
+            return;
+          }
+          btn.disabled = false; btn.textContent = '进入';
+          if (r.status === 429) {
+            err.textContent = '尝试太频繁，被暂时拦下了，10 分钟后再来';
           } else if (r.status === 500) {
             err.textContent = '服务器未配置 ROOM_TOKEN（HTTP 500），看 README 排查';
           } else if (r.status === 401) {
@@ -837,6 +1258,20 @@
       currentMessages = messages;
       const room = getRoom();
       const self = getIdentity();
+      pushRecentRoom(room);
+
+      // ---- 重绘前状态保全:焦点/光标/滚动位置/展开的折叠 ----
+      // 轮询发现新消息会重绘整树,不打断「正在打字 / 正在展开读代码」的人
+      const prevTa = document.getElementById('msg-input');
+      const keepFocus = !!(prevTa && document.activeElement === prevTa);
+      const selS = keepFocus ? prevTa.selectionStart : 0;
+      const selE = keepFocus ? prevTa.selectionEnd : 0;
+      const prevScroll = window.scrollY;
+      const openFolds = Array.prototype.map.call(
+        document.querySelectorAll('#list details.fold[open]'),
+        function (d) { return d.getAttribute('data-mid'); }   // 按消息 id 记,不按下标 —— 新消息插顶后下标会错位
+      );
+
       const listHtml = messages.length === 0
         ? '<div class="empty">空房间。传点东西，把链接发出去。</div>'
         : '<ul class="messages">' + messages.map(function (m, i) {
@@ -875,7 +1310,7 @@
                 // 展开态由 details.fold[open] + .fold-preview 把预览藏掉
                 textHtml =
                   '<div class="fold-box">' +
-                    '<details class="fold" data-i="' + i + '">' +
+                    '<details class="fold" data-i="' + i + '" data-mid="' + m.id + '">' +
                       '<summary class="fold-bar">' +
                         '<span class="fold-tag">长文</span>' +
                         '<span class="fold-label">' + label + '</span>' +
@@ -905,13 +1340,15 @@
                 ? ' style="width:min(100%,calc(min(60vh,520px)*' + (m.w / m.h).toFixed(4) + '));' +
                   'width:min(100%,calc(min(60dvh,520px)*' + (m.w / m.h).toFixed(4) + '));"'
                 : '';
+              // alt 带语义:作者 + 尺寸,屏幕阅读器和图挂了的人都能知道这是什么
+              const altText = escapeHtml((m.name || '未知') + ' 的图片' + (m.w && m.h ? ' ' + m.w + '×' + m.h : ''));
               if (isLongImg) {
                 // 长图从顶部开始裁、全景从左侧开始裁,朝阅读起点对齐
                 const cropPos = m.h > m.w ? 'center top' : 'left center';
                 imgHtml =
                   '<div class="msg-imgbox">' +
                     '<div class="msg-imgcard" data-i="' + i + '">' +
-                      '<img class="msg-img" loading="lazy" decoding="async" alt="长图" ' +
+                      '<img class="msg-img" loading="lazy" decoding="async" alt="' + altText + '（长图，点击看全图）" ' +
                         'src="/api/img?id=' + encodeURIComponent(m.img) + '" ' + dimAttrs +
                         'style="object-position:' + cropPos + '" data-i="' + i + '">' +
                       '<span class="msg-imgbadge">' + (m.h > m.w ? '长图' : '全景') + '</span>' +
@@ -920,7 +1357,7 @@
               } else {
                 imgHtml =
                   '<div class="msg-imgbox">' +
-                    '<img class="msg-img" loading="lazy" decoding="async" alt="图片" ' +
+                    '<img class="msg-img" loading="lazy" decoding="async" alt="' + altText + '" ' +
                       'src="/api/img?id=' + encodeURIComponent(m.img) + '" ' + dimAttrs + fitStyle +
                       'data-i="' + i + '">' +
                   '</div>';
@@ -928,7 +1365,7 @@
             }
             return (
               '<li class="message">' +
-                '<div class="avatar" style="background:' + escapeHtml(m.color || '#888') + '"></div>' +
+                '<div class="avatar" style="background:' + escapeHtml(m.color || '#888') + '" aria-hidden="true"></div>' +
                 '<div class="msg-body">' +
                 '<div class="msg-meta">' +
                   '<span class="msg-author">' + escapeHtml(author) + '</span>' +
@@ -936,7 +1373,7 @@
                   '<span>' + escapeHtml(relTime(m.ts)) + '</span>' +
                   '<span class="msg-actions">' +
                     (hasText ? '<button class="copy-btn" data-i="' + i + '">复制</button>' : '') +
-                    '<button class="del-btn" data-i="' + i + '" title="删除（全员可删，不可恢复）">删</button>' +
+                    '<button class="del-btn" data-i="' + i + '" title="删除（全员可删，不可恢复）" aria-label="删除 ' + escapeHtml(author) + ' 的这条消息">删</button>' +
                   '</span>' +
                 '</div>' +
                   textHtml +
@@ -952,6 +1389,7 @@
             '<h1>note220</h1>' +
             '<div class="actions">' +
               '<button id="copy-link-btn" class="mini-btn">复制链接</button>' +
+              '<button id="burn-btn" class="mini-btn burn-btn">焚毁</button>' +
               '<button id="logout-btn" class="mini-btn">退出</button>' +
             '</div>' +
           '</div>' +
@@ -960,48 +1398,71 @@
             '你是 <span id="name-chip" class="chip">' + escapeHtml(self.name) + '</span>（点击改名） · ' +
             '3 天没人发言本房间自动清空' +
           '</p>' +
+          '<div id="room-panel" class="inline-panel" hidden></div>' +
+          '<div id="name-panel" class="inline-panel" hidden></div>' +
           '<div class="composer">' +
             '<button id="img-btn" class="composer-img-btn" type="button" title="插入图片（原图直传，≤20MB）" aria-label="插入图片">' +
               '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>' +
             '</button>' +
-            '<textarea id="msg-input" placeholder="传点东西…（文字/代码/链接/图片，文字单条上限 10 万字）" maxlength="100000"></textarea>' +
+            '<textarea id="msg-input" placeholder="传点东西…（文字/代码/链接/图片，文字单条上限 10 万字）" maxlength="100000" aria-label="消息内容"></textarea>' +
             '<button id="msg-btn">发送</button>' +
             '<input type="file" id="img-input" accept="image/*" hidden>' +
           '</div>' +
+          '<div id="composer-err" class="composer-err" role="alert" hidden></div>' +
           '<div id="attach-strip" class="attach-strip" hidden>' +
-            '<img id="attach-thumb" class="attach-thumb" alt="待发送图片">' +
-            '<div class="attach-meta"><span id="attach-name" class="attach-name"></span><span id="attach-info"></span></div>' +
-            '<button id="attach-remove" class="attach-remove" type="button">移除</button>' +
+            '<div class="strip-main">' +
+              '<img id="attach-thumb" class="attach-thumb" alt="待发送图片">' +
+              '<div class="attach-meta"><span id="attach-name" class="attach-name"></span><span id="attach-info"></span></div>' +
+              '<button id="attach-remove" class="attach-remove" type="button">移除</button>' +
+            '</div>' +
+            '<div id="strip-up" class="strip-up" hidden>' +
+              '<div id="up-bar" class="up-bar" role="progressbar" aria-label="图片上传进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="up-fill" class="up-fill"></div></div>' +
+              '<span id="up-pct" class="up-pct"></span>' +
+              '<button id="up-cancel" class="up-cancel" type="button">取消上传</button>' +
+            '</div>' +
           '</div>' +
-          '<div class="composer-hint">Ctrl + Enter 发送 · 🖼 插图原图直传（≤20MB） · 大段内容会折叠，点击「复制」一键拿走</div>' +
+          '<div class="composer-hint">Ctrl + Enter 发送 · 插图原图直传（≤20MB） · 大段内容会折叠，点击「复制」一键拿走</div>' +
           '<div id="list">' + listHtml + '</div>' +
         '</div>';
 
       const ta = document.getElementById('msg-input');
       const btn = document.getElementById('msg-btn');
 
-      // ===== 图片发布:选图 → 校验/量尺寸(原图直传,不压缩) → 挂在待发区 → 先传图再发消息 =====
-      let pendingImg = null;   // { blob, mime, w, h, name, url }
+      // ===== 待发图片(全局 pendingImg):重绘/回登录页都不丢,重绘后重挂条 UI =====
       const imgBtn = document.getElementById('img-btn');
       const imgInput = document.getElementById('img-input');
       const strip = document.getElementById('attach-strip');
 
-      function fmtSize(n) {
-        return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+      function showPendingImg() {
+        if (!pendingImg) { strip.hidden = true; imgInput.value = ''; return; }
+        document.getElementById('attach-thumb').src = pendingImg.url;
+        document.getElementById('attach-name').textContent = pendingImg.name || '图片';
+        document.getElementById('attach-info').textContent =
+          pendingImg.w + '×' + pendingImg.h + ' · ' + fmtSize(pendingImg.blob.size) + '（原图）';
+        strip.hidden = false;
+      }
+      function setPendingImg(p) {
+        if (pendingImg && pendingImg.url && (!p || p.url !== pendingImg.url)) URL.revokeObjectURL(pendingImg.url);
+        pendingImg = p;
+        showPendingImg();
       }
 
-      function setPendingImg(p) {
-        if (pendingImg && pendingImg.url) URL.revokeObjectURL(pendingImg.url);
-        pendingImg = p;
-        if (p) {
-          document.getElementById('attach-thumb').src = p.url;
-          document.getElementById('attach-name').textContent = p.name || '图片';
-          document.getElementById('attach-info').textContent =
-            p.w + '×' + p.h + ' · ' + fmtSize(p.blob.size) + '（原图）';
-          strip.hidden = false;
+      // 上传进度行:XHR upload.onprogress 驱动;fetch 拿不到上传进度,所以上传必须走 XHR
+      function showUploadRow(show, loaded, total) {
+        const row = document.getElementById('strip-up');
+        if (!row) return;
+        row.hidden = !show;
+        if (!show) return;
+        const bar = document.getElementById('up-bar');
+        if (total) {
+          const pct = Math.min(100, Math.round(loaded / total * 100));
+          document.getElementById('up-fill').style.width = pct + '%';
+          bar.setAttribute('aria-valuenow', String(pct));
+          document.getElementById('up-pct').textContent = fmtSize(loaded) + ' / ' + fmtSize(total);
         } else {
-          strip.hidden = true;
-          imgInput.value = '';
+          document.getElementById('up-fill').style.width = '0%';
+          bar.setAttribute('aria-valuenow', '0');
+          document.getElementById('up-pct').textContent = '准备上传…';
         }
       }
 
@@ -1048,7 +1509,7 @@
 
       const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;   // 与 img.js 服务端护栏一致(KV 单值上限 25MB,留了余量)
 
-      // 原图直传:不做压缩、不重编码,文件是什么就传什么(GIF 特例随之取消,统一走上限)。
+      // 原图直传:不做压缩、不重编码,文件是什么就传什么。
       // prepareImage 只剩三件事:①卡 20MB 上限;②解一遍码拿摆正后的 w/h(占位防跳版 + 长图裁切卡判定);
       // ③拦下浏览器解不开的格式 —— HEIC 这类传上去接收方大概率看不见,提前报错更友好
       async function prepareImage(file) {
@@ -1070,12 +1531,16 @@
           p.url = URL.createObjectURL(p.blob);
           setPendingImg(p);
         } catch (e) {
-          alert(e.message || '图片处理失败');
+          showToast(e.message || '图片处理失败', true);
           imgInput.value = '';
         }
         imgBtn.disabled = false;
       };
       document.getElementById('attach-remove').onclick = function () { setPendingImg(null); };
+      document.getElementById('up-cancel').onclick = function () {
+        if (uploadXhr) uploadXhr.abort();   // onabort → post() 收到 'aborted' 收尾
+        setPendingImg(null);
+      };
 
       // Ctrl/⌘+V 粘贴图片:浏览器默认把粘贴进 textarea 的图片直接丢弃(textarea 只收文字),
       // 所以要自己拦 paste 事件,从 clipboardData.items 里抠出位图文件挂到待发区。
@@ -1099,32 +1564,74 @@
           p.url = URL.createObjectURL(p.blob);
           setPendingImg(p);
         } catch (err) {
-          alert(err.message || '图片处理失败');
+          showToast(err.message || '图片处理失败', true);
         }
         imgBtn.disabled = false;
       });
+
+      // ===== 图片上传(XHR,带进度):fetch 拿不到上传进度,20MB 原图必须给进度条 =====
+      // resolve 值三态:{id} 成功 / {err} 失败 / 'aborted' 用户取消 / {auth} 会话过期
+      function uploadImage(p) {
+        return new Promise(function (resolve) {
+          const xhr = new XMLHttpRequest();
+          uploadXhr = xhr;
+          xhr.open('POST', '/api/img', true);
+          xhr.setRequestHeader('Content-Type', p.mime);
+          showUploadRow(true, 0, 0);
+          xhr.upload.onprogress = function (e) {
+            if (e.lengthComputable) showUploadRow(true, e.loaded, e.total);
+          };
+          xhr.onload = function () {
+            uploadXhr = null;
+            showUploadRow(false);
+            if (xhr.status === 401) { resolve({ auth: true }); return; }
+            let j = xhr.response;
+            if (typeof j === 'string') { try { j = JSON.parse(j); } catch (e) { j = null; } }
+            if (xhr.status >= 200 && xhr.status < 300 && j && j.id) {
+              resolve({ id: j.id });
+            } else if (xhr.status === 413) {
+              resolve({ err: '图片上传失败：超过 20MB 上限' });
+            } else if (xhr.status === 415) {
+              resolve({ err: '图片上传失败：服务端不认这个格式' });
+            } else {
+              resolve({ err: '图片上传失败 (HTTP ' + xhr.status + ')' });
+            }
+          };
+          xhr.onerror = function () {
+            uploadXhr = null;
+            showUploadRow(false);
+            resolve({ err: '图片上传失败：网络错误' });
+          };
+          xhr.onabort = function () {
+            uploadXhr = null;
+            showUploadRow(false);
+            resolve('aborted');
+          };
+          xhr.send(p.blob);
+        });
+      }
 
       async function post() {
         const text = ta.value.trim();
         if (!text && !pendingImg) return;
         btn.disabled = true; btn.textContent = '…';
+        setComposerErr('');
         try {
           // 两步走:先传图拿 id,再发消息(消息 JSON 只挂百字节元数据,不塞图片本体)
           let imgFields = {};
           if (pendingImg) {
-            const up = await fetch('/api/img', {
-              method: 'POST',
-              headers: { 'Content-Type': pendingImg.mime },
-              body: pendingImg.blob,
-            });
-            if (up.status === 401) { renderAuth(); return; }  // 会话过期,回门口重新输令牌
-            if (!up.ok) {
-              btn.disabled = false; btn.textContent = '发';
-              alert('图片上传失败 (HTTP ' + up.status + ')' + (up.status === 413 ? '，图片太大' : ''));
+            const up = await uploadImage(pendingImg);
+            if (up === 'aborted') {            // 用户取消:清待发图,回输入态
+              btn.disabled = false; btn.textContent = '发送';
               return;
             }
-            const j = await up.json();
-            imgFields = { img: j.id, mime: pendingImg.mime, w: pendingImg.w, h: pendingImg.h };
+            if (up && up.auth) { renderAuth(); return; }   // 会话过期:草稿已持久化,回来还在
+            if (up && up.err) {
+              btn.disabled = false; btn.textContent = '发送';
+              setComposerErr(up.err);
+              return;
+            }
+            imgFields = { img: up.id, mime: pendingImg.mime, w: pendingImg.w, h: pendingImg.h };
           }
           const r = await fetch('/api/messages', {
             method: 'POST',
@@ -1137,26 +1644,33 @@
               ...imgFields,
             }),
           });
-          btn.disabled = false; btn.textContent = '发';
           if (r.ok) {
+            saveDraft(getRoom(), '');   // 发送成功才清草稿
             ta.value = '';
             setPendingImg(null);
+            setComposerErr('');
             await loadBoard();
-            ta.focus();
+            ta.focus({ preventScroll: true });
           } else if (r.status === 401) {
-            renderAuth(); // 会话过期，回门口重新输令牌
+            renderAuth(); // 会话过期，回门口重新输令牌（草稿已存 localStorage）
+          } else if (r.status === 400) {
+            btn.disabled = false; btn.textContent = '发送';
+            setComposerErr('发送失败：内容或图片元数据被拒（400）');
           } else {
-            alert('发送失败 (HTTP ' + r.status + ')');
+            btn.disabled = false; btn.textContent = '发送';
+            setComposerErr('发送失败 (HTTP ' + r.status + ')');
           }
         } catch (e) {
-          btn.disabled = false; btn.textContent = '发';
-          alert('网络错误');
+          btn.disabled = false; btn.textContent = '发送';
+          setComposerErr('网络错误，请重试');
         }
       }
       btn.onclick = post;
       ta.onkeydown = function (e) {
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); post(); }
       };
+      // 草稿实时落盘:任何重绘(轮询/删消息/改名/401 回门口)后都能恢复
+      ta.addEventListener('input', function () { saveDraft(getRoom(), ta.value); });
 
       // 每条消息的「复制」按钮 + 图片点开大图（事件委托，一次绑定管整个列表）
       document.getElementById('list').addEventListener('click', async function (e) {
@@ -1180,14 +1694,15 @@
             if (r.status === 401) { renderAuth(); return; }  // 会话过期，回门口重新输令牌
             if (r.ok || r.status === 404) {
               // 404 = 已被别人抢先删掉，刷新列表对齐即可
+              showToast('已删除');
               await loadBoard();
             } else {
               t.disabled = false;
-              alert('删除失败 (HTTP ' + r.status + ')');
+              showToast('删除失败 (HTTP ' + r.status + ')', true);
             }
           } catch (err) {
             t.disabled = false;
-            alert('网络错误');
+            showToast('网络错误', true);
           }
           return;
         }
@@ -1199,6 +1714,7 @@
           t.textContent = '已复制';
         } catch (err) {
           t.textContent = '失败';
+          showToast('复制失败：浏览器没给剪贴板权限', true);
         }
         setTimeout(function () { t.textContent = '复制'; }, 1200);
       });
@@ -1219,22 +1735,9 @@
         }
       }, true);
 
-      // 点击房间名 → 换房 / 开新房
-      document.getElementById('room-chip').onclick = function () {
-        const v = prompt('房间名（1-32 位字母/数字/ - / _ ，输入即进入或创建）', getRoom());
-        if (v === null) return;
-        const clean = v.trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
-        if (clean && clean !== getRoom()) location.hash = 'r=' + clean;
-      };
-
-      // 点击自己的名字 → 改名
-      document.getElementById('name-chip').onclick = function () {
-        const v = prompt('你叫什么（发消息时显示，≤64 字符）', getIdentity().name);
-        if (v !== null && v.trim()) {
-          localStorage.setItem('anon_name', v.trim().slice(0, 64));
-          loadBoard();
-        }
-      };
+      // 点击房间名 / 名字 → 内联面板(不再用阻塞式 prompt,手机体验好一个量级)
+      chipActivate(document.getElementById('room-chip'), toggleRoomPanel);
+      chipActivate(document.getElementById('name-chip'), toggleNamePanel);
 
       // 复制本房间链接（发链接给朋友 = 分享这个房间）
       document.getElementById('copy-link-btn').onclick = async function () {
@@ -1244,77 +1747,95 @@
           that.textContent = '已复制';
         } catch (err) {
           that.textContent = '失败';
+          showToast('复制失败：浏览器没给剪贴板权限', true);
         }
         setTimeout(function () { that.textContent = '复制链接'; }, 1200);
       };
 
-      // ===== 图片全屏预览(lightbox):点缩略图进来,可下载原图 =====
-      // lightbox 挂在 body 上(不在 #root 里),renderBoard 重渲染不会弄丢它。
-      // 图片放在 flex 舞台里完整显示(不用 100vh 硬算高度,规避 iOS 工具栏遮挡)
-      function openLightbox(m) {
-        let lb = document.getElementById('lightbox');
-        if (!lb) {
-          lb = document.createElement('div');
-          lb.id = 'lightbox';
-          lb.className = 'lightbox';
-          lb.innerHTML =
-            '<div class="lb-bar">' +
-              '<span class="lb-name"></span>' +
-              '<span class="lb-actions">' +
-                '<a id="lb-dl" class="lb-btn" href="#">下载</a>' +
-                '<button id="lb-close" class="lb-btn" type="button">关闭</button>' +
-              '</span>' +
-            '</div>' +
-            '<div class="lb-stage"><img class="lb-img" alt="图片预览"></div>';
-          document.body.appendChild(lb);
-
-          const st = lb.querySelector('.lb-stage');
-          const close = function () {
-            lb.classList.remove('open');
-            document.body.style.overflow = '';   // 解锁背景滚动
-          };
-          document.getElementById('lb-close').onclick = close;
-          st.addEventListener('click', function (e) {
-            if (e.target === st) close();        // 点图片外的遮罩空白处关闭
-          });
-          document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') close();
-          });
+      // ===== 焚毁此房间:整间清空(含图片本体),单次 confirm 报房间名防误触 =====
+      document.getElementById('burn-btn').onclick = async function () {
+        const room = getRoom();
+        if (!confirm('焚毁 #' + room + ' —— 整间清空（含图片本体），不可恢复。确定？')) return;
+        const that = this;
+        that.disabled = true;
+        try {
+          const r = await fetch('/api/messages?room=' + encodeURIComponent(room) + '&all=1', { method: 'DELETE' });
+          if (r.status === 401) { renderAuth(); return; }
+          if (r.ok) {
+            const j = await r.json().catch(function () { return null; });
+            showToast('已焚毁 #' + room + (j && typeof j.burned === 'number' ? '（清掉 ' + j.burned + ' 条）' : ''));
+            saveDraft(room, '');        // 房间都没了,草稿一起清
+            ta.value = '';
+            setPendingImg(null);
+            await loadBoard();
+          } else {
+            showToast('焚毁失败 (HTTP ' + r.status + ')', true);
+            that.disabled = false;
+          }
+        } catch (e) {
+          showToast('网络错误', true);
+          that.disabled = false;
         }
-        const src = '/api/img?id=' + encodeURIComponent(m.img);
-        lb.querySelector('.lb-img').src = src;
-        // 下载 = 同一张图带 ?dl=1,服务端回 attachment 头,浏览器直接存盘
-        document.getElementById('lb-dl').href = src + '&dl=1';
-        lb.querySelector('.lb-name').textContent =
-          '@ ' + (m.name || 'unknown') + (m.w && m.h ? ' · ' + m.w + '×' + m.h : '');
-        // 打开即锁背景滚动:触屏上 fixed 遮罩本身挡不住 touchmove 连带滚动
-        document.body.style.overflow = 'hidden';
-        lb.classList.add('open');
-      }
+      };
 
-      // 用完退出：吊销会话 + 清 cookie，回门口
+      // 用完退出：吊销会话 + 清 cookie，回门口（草稿留在 localStorage，重新进门还在）
       document.getElementById('logout-btn').onclick = async function () {
         try { await fetch('/api/auth', { method: 'DELETE' }); } catch (e) {}
         location.reload();
       };
 
-      ta.focus();
+      // ---- 重绘后状态恢复:草稿 → 待发图 → 展开的折叠 → 焦点/光标 → 滚动位置 ----
+      ta.value = loadDraft(room);
+      showPendingImg();
+      openFolds.forEach(function (mid) {
+        const d = root.querySelector('details.fold[data-mid="' + mid + '"]');
+        if (d) d.open = true;   // 置 open 会触发 toggle → 懒加载全文自动跟上
+      });
+      if (keepFocus) {
+        ta.focus({ preventScroll: true });
+        try { ta.setSelectionRange(selS, selE); } catch (e) {}
+      } else {
+        ta.focus({ preventScroll: true });
+      }
+      window.scrollTo(0, prevScroll);
+
+      startPolling();
     }
 
-    async function loadBoard() {
+    async function loadBoard(opts) {
+      const silent = !!(opts && opts.silent);
+      const room = getRoom();
       const listEl = document.getElementById('list');
-      if (listEl) listEl.innerHTML = '<div class="loading">加载中…</div>';
+      if (!silent && listEl) listEl.innerHTML = '<div class="loading">加载中…</div>';
+      let r;
       try {
-        const r = await fetch('/api/messages?room=' + encodeURIComponent(getRoom()));
-        if (r.status === 401) {
-          renderAuth();
-        } else if (r.ok) {
-          const data = await r.json();
-          renderBoard(data.messages);
-        }
+        r = await fetch('/api/messages?room=' + encodeURIComponent(room));
       } catch (e) {
-        // 忽略，保留原列表
+        if (!silent) showToast('网络错误，加载失败', true);
+        return;
       }
+      if (r.status === 401) { stopPolling(); renderAuth(); return; }
+      if (!r.ok) { if (!silent) showToast('加载失败 (HTTP ' + r.status + ')', true); return; }
+      let data = null;
+      try { data = await r.json(); } catch (e) { return; }
+      const msgs = Array.isArray(data && data.messages) ? data.messages : [];
+      const idSet = new Set(msgs.map(function (m) { return m.id; }));
+      const roomChanged = room !== lastRoom;
+      if (roomChanged) { unread = 0; updateTitle(); }   // 换房 = 主动查看,未读清零
+      // 防重绘:静默轮询时 id 集合没变就什么都不做 —— 打字/读折叠的人不被打扰
+      const changed = roomChanged ||
+        idSet.size !== lastIdSet.size ||
+        msgs.some(function (m) { return !lastIdSet.has(m.id); });
+      if (!changed) return;
+      // 后台/失焦期间到达的新消息 → 标题角标计数,回前台由 focus/visibilitychange 清零
+      if (silent && !roomChanged && (document.hidden || !document.hasFocus())) {
+        let n = 0;
+        msgs.forEach(function (m) { if (!lastIdSet.has(m.id)) n++; });
+        if (n > 0) { unread += n; updateTitle(); }
+      }
+      lastRoom = room;
+      lastIdSet = idSet;
+      renderBoard(msgs);
     }
 
     async function boot() {
@@ -1328,7 +1849,11 @@
           renderAuth();
         } else if (r.ok) {
           const data = await r.json();
-          renderBoard(data.messages);
+          const room = getRoom();
+          const msgs = Array.isArray(data && data.messages) ? data.messages : [];
+          lastRoom = room;
+          lastIdSet = new Set(msgs.map(function (m) { return m.id; }));
+          renderBoard(msgs);
         } else {
           root.innerHTML = '<div class="container"><h1>出错了</h1><p class="hint">HTTP ' + r.status + '，稍后再试。</p></div>';
         }
@@ -1339,6 +1864,7 @@
 
     // 换房间（点房间名跳转 / 直接改 hash）时重拉数据
     window.addEventListener('hashchange', function () {
+      closePanels(false);
       loadBoard();
     });
 
